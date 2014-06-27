@@ -3,6 +3,7 @@ from scipy import ndimage
 from scipy.optimize import curve_fit
 from scipy.signal import fftconvolve
 import time
+import pylab as pb
 
 try:
     import pycuda.autoinit
@@ -13,46 +14,46 @@ try:
 except:
     print "Pycuda unavailable - GPU mode will fail."
 
-# def fft_convolve(in1, in2, use_gpu=False, conv_mode="linear"):
-#     """
-#     This function determines the convolution of two inputs using the FFT. Contains an implementation for both CPU
-#     and GPU.
-#
-#     INPUTS:
-#     in1         (no default):           Array containing one set of data, possibly an image.
-#     in2         (no default):           Array containing one set of data, possibly a filter or psf.
-#     use_gpu     (default = True):       Boolean parameter which allows specification of GPU use.
-#     conv_mode   (default = "linear")    Mode specifier for the convolution.
-#     """
-#
-#     # NOTE: Circular convolution assumes a periodic repetition of the input. This can cause edge effects. Linear
-#     # convolution pads the input with zeros to avoid this problem but is consequently heavier on computation and
-#     # memory.
-#
-#     if use_gpu:
-#         if conv_mode=="linear":
-#             rfftrecomp = gpurfft(image,padded=True, load_gpu=True)
-#             rfftpsf = filter
-#
-#             rfftconv = rfftrecomp*rfftpsf
-#
-#             irfftconv = gpuirfft(rfftconv,paddedinput=False)
-#
-#             return irfftconv[image.shape[0]/2:3*image.shape[0]/2,image.shape[1]/2:3*image.shape[1]/2]
-#         elif conv_mode=="circular":
-#             rfftrecomp = gpurfft(image, padded=False, load_gpu=True)
-#             rfftpsf = filter
-#
-#             rfftconv = rfftrecomp*rfftpsf
-#
-#             irfftconv = np.fft.fftshift(gpuirfft(rfftconv,paddedinput=False))
-#
-#             return irfftconv
-#     else:
-#         if conv_mode=="linear":
-#             return fftconvolve(in1, in2, mode='same')
-#         elif conv_mode=="circular":
-#             return np.real(np.fft.fftshift(np.fft.ifft2(in2*np.fft.fft2(in1))))
+def fft_convolve(in1, in2, use_gpu=False, conv_mode="linear"):
+    """
+    This function determines the convolution of two inputs using the FFT. Contains an implementation for both CPU
+    and GPU.
+
+    INPUTS:
+    in1         (no default):           Array containing one set of data, possibly an image.
+    in2         (no default):           Gpuarray containing the FFT of the PSF.
+    use_gpu     (default = True):       Boolean parameter which allows specification of GPU use.
+    conv_mode   (default = "linear")    Mode specifier for the convolution.
+    """
+
+    # NOTE: Circular convolution assumes a periodic repetition of the input. This can cause edge effects. Linear
+    # convolution pads the input with zeros to avoid this problem but is consequently heavier on computation and
+    # memory.
+
+    if use_gpu:
+        if conv_mode=="linear":
+            fft_in1 = gpu_r2c_fft(in1, padded=True, load_gpu=True)
+            fft_in2 = in2
+
+            conv_in1_in2 = fft_in1*fft_in2
+
+            conv_in1_in2 = gpu_c2r_ifft(conv_in1_in2, is_padded=True)
+
+            return conv_in1_in2
+        elif conv_mode=="circular":
+            fft_in1 = gpu_r2c_fft(in1, padded=False, load_gpu=True)
+            fft_in2 = in2
+
+            conv_in1_in2 = fft_in1*fft_in2
+
+            conv_in1_in2 = (gpu_c2r_ifft(conv_in1_in2, is_padded=False))
+
+            return conv_in1_in2
+    else:
+        if conv_mode=="linear":
+            return fftconvolve(in1, in2, mode='same')
+        elif conv_mode=="circular":
+            return np.real(np.fft.fftshift(np.fft.ifft2(in2*np.fft.fft2(in1))))
 
 def gpu_r2c_fft(in1, padded=True, load_gpu=False):
     """
@@ -75,7 +76,7 @@ def gpu_r2c_fft(in1, padded=True, load_gpu=False):
         output_size = 2*np.array(in1.shape)
         output_size[1] = 0.5*output_size[1] + 1
 
-        gpu_in1 = np.zeros([padded_size[0],padded_size[1]], dtype=np.float32)
+        gpu_in1 = np.zeros([padded_size[0],padded_size[1]])
         gpu_in1[0:padded_size[0]/2,0:padded_size[1]/2] = in1
         gpu_in1 = gpuarray.to_gpu_async(gpu_in1.astype(np.float32))
     else:
@@ -99,6 +100,7 @@ def gpu_c2r_ifft(in1, is_gpuarray=True, is_padded=True):
 
     INPUTS:
     in1         (no default):       The array on which the IFFT is to be performed.
+    is_gpuarray (default=True):     Boolean specifier for whether or not input is on the gpu.
     is_padded   (default=True):     Boolean specifier for whether or not input is padded.
 
     OUTPUTS:
@@ -114,15 +116,39 @@ def gpu_c2r_ifft(in1, is_gpuarray=True, is_padded=True):
     output_size[1] = 2*(output_size[1]-1)
 
     if is_padded:
-        out1 = tuple(slice(0,sz) for sz in 0.5*output_size)
+        out1_slice = tuple(slice(0.5*sz,1.5*sz) for sz in 0.5*output_size)
     else:
-        out1 = tuple(slice(0,sz) for sz in output_size)
+        out1_slice = tuple(slice(0,sz) for sz in output_size)
 
     gpu_out1 = gpuarray.empty([output_size[0],output_size[1]], np.float32)
     gpu_plan = Plan(output_size, np.complex64, np.float32)
     ifft(gpu_in1, gpu_out1, gpu_plan, True)
 
-    return gpu_out1.get()[out1]
+    return gpu_out1.get()[out1_slice]
+
+if __name__ == "__main__":
+    for i in range(1):
+        delta = np.empty([512,512])
+        delta[256,256] = 1
+        fftdelta = gpu_r2c_fft(delta, load_gpu=True)
+
+        a = np.random.randn(512,512)
+        b = gpu_r2c_fft(a, padded=True, load_gpu=True)
+        c = gpu_c2r_ifft(b, is_padded=True)
+
+        d = fft_convolve(a, fftdelta, use_gpu=True, conv_mode='circular')
+        e = fft_convolve(a, delta, use_gpu=False, conv_mode='circular')
+
+        # pb.figure(1)
+        # pb.subplot(211)
+        # pb.imshow(d)
+        #
+        # pb.subplot(212)
+        # pb.imshow(a)
+        # pb.show()
+
+        print d, e, a
+
 
 # def threshold_array(in1, max_scale, initial_run=False):
 #     """
@@ -165,17 +191,3 @@ def gpu_c2r_ifft(in1, is_gpuarray=True, is_padded=True):
 #         return in1
 #     else:
 #         return in1, thresh3sigma
-
-if __name__ == "__main__":
-    for i in range(5):
-        a = np.random.randn(4096,4096)
-        t1 = time.time()
-        b = gpu_r2c_fft(a, padded=True, load_gpu=True)
-        t2 = time.time()
-        c = gpu_c2r_ifft(b, is_padded=True)
-        t3 = time.time()
-        print np.average(c-a)
-        print t3 - t2
-        print t2 - t1
-        # print b
-        # print c
