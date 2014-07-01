@@ -53,7 +53,7 @@ def fft_convolve(in1, in2, use_gpu=False, conv_mode="linear"):
         if conv_mode=="linear":
             return fftconvolve(in1, in2, mode='same')
         elif conv_mode=="circular":
-            return np.real(np.fft.fftshift(np.fft.ifft2(in2*np.fft.fft2(in1))))
+            return np.fft.fftshift(np.fft.irfft2(in2*np.fft.rfft2(in1)))
 
 def gpu_r2c_fft(in1, padded=True, load_gpu=False):
     """
@@ -110,13 +110,15 @@ def gpu_c2r_ifft(in1, is_gpuarray=True, is_padded=True):
     if is_gpuarray:
         gpu_in1 = in1
     else:
-        gpu_in1 = gpuarray.to_gpu_async(in1.astype(np.float32))
+        gpu_in1 = gpuarray.to_gpu_async(in1.astype(np.complex64))
 
     output_size = np.array(in1.shape)
     output_size[1] = 2*(output_size[1]-1)
 
+    # TODO: THIS NEEDS TO RELIABLY RETURN WHAT I WANT. WEIRD BEHAVIOUR DUE TO THE PADDED OR UNPADDED BEHAVIOUR.
+
     if is_padded:
-        out1_slice = tuple(slice(0.5*sz,1.5*sz) for sz in 0.5*output_size)
+        out1_slice = tuple(slice(0.5*sz-1,1.5*sz-1) for sz in 0.5*output_size)
     else:
         out1_slice = tuple(slice(0,sz) for sz in output_size)
 
@@ -128,24 +130,24 @@ def gpu_c2r_ifft(in1, is_gpuarray=True, is_padded=True):
 
 if __name__ == "__main__":
     for i in range(1):
-        delta = np.empty([512,512])
-        delta[256,256] = 1
-        fftdelta = gpu_r2c_fft(delta, load_gpu=True)
+        delta = np.zeros([512,512])
+        delta[255,255] = 1
+        fftdelta = gpu_r2c_fft(delta.astype(np.float32), padded=True, load_gpu=True)
 
-        a = np.random.randn(512,512)
-        b = gpu_r2c_fft(a, padded=True, load_gpu=True)
-        c = gpu_c2r_ifft(b, is_padded=True)
+        np.random.seed(1)
+        a = np.random.randn(512,512).astype(np.float32)
 
-        d = fft_convolve(a, fftdelta, use_gpu=True, conv_mode='circular')
-        e = fft_convolve(a, delta, use_gpu=False, conv_mode='circular')
+        paddedrand = np.zeros([1024,1024])
+        paddedrand[256:768,256:768] = a
+        # b = gpu_r2c_fft(a, padded=True, load_gpu=True)
+        # c = np.fft.rfft2(a)
+        # bb = gpu_c2r_ifft(b, is_padded=True)
+        # cc = np.fft.irfft2(c)
 
-        # pb.figure(1)
-        # pb.subplot(211)
-        # pb.imshow(d)
-        #
-        # pb.subplot(212)
-        # pb.imshow(a)
-        # pb.show()
+        # print bb, cc, a
+
+        d = fft_convolve(a, fftdelta, use_gpu=True, conv_mode='linear')
+        e = fft_convolve(a, delta, use_gpu=False, conv_mode='linear')
 
         print d, e, a
 
