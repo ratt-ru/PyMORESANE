@@ -32,30 +32,32 @@ def fft_convolve(in1, in2, use_gpu=False, conv_mode="linear"):
 
     if use_gpu:
         if conv_mode=="linear":
-            fft_in1 = gpu_r2c_fft(in1, padded=True, load_gpu=True)
+            fft_in1 = gpu_r2c_fft(in1, pad_input=True, load_gpu=True)
             fft_in2 = in2
 
             conv_in1_in2 = fft_in1*fft_in2
 
-            conv_in1_in2 = gpu_c2r_ifft(conv_in1_in2, is_padded=True)
+            conv_in1_in2 = gpu_c2r_ifft(conv_in1_in2, unpad=False)
 
-            return conv_in1_in2
+            out1_slice = tuple(slice(0.5*sz-1,1.5*sz-1) for sz in in1.shape)
+
+            return np.fft.fftshift(conv_in1_in2)[out1_slice]
         elif conv_mode=="circular":
-            fft_in1 = gpu_r2c_fft(in1, padded=False, load_gpu=True)
+            fft_in1 = gpu_r2c_fft(in1, pad_input=False, load_gpu=True)
             fft_in2 = in2
 
             conv_in1_in2 = fft_in1*fft_in2
 
-            conv_in1_in2 = (gpu_c2r_ifft(conv_in1_in2, is_padded=False))
+            conv_in1_in2 = (gpu_c2r_ifft(conv_in1_in2, unpad=False))
 
-            return conv_in1_in2
+            return np.fft.fftshift(conv_in1_in2)
     else:
         if conv_mode=="linear":
             return fftconvolve(in1, in2, mode='same')
         elif conv_mode=="circular":
             return np.fft.fftshift(np.fft.irfft2(in2*np.fft.rfft2(in1)))
 
-def gpu_r2c_fft(in1, padded=True, load_gpu=False):
+def gpu_r2c_fft(in1, pad_input=True, load_gpu=False):
     """
     This function makes use of the scikits implementation of the FFT for GPUs to take the real to complex FFT.
 
@@ -70,14 +72,14 @@ def gpu_r2c_fft(in1, padded=True, load_gpu=False):
     gpu_out1.get()  (no default):   The result from the gpu array.
     """
 
-    if padded:
+    if pad_input:
         padded_size = 2*np.array(in1.shape)
 
         output_size = 2*np.array(in1.shape)
         output_size[1] = 0.5*output_size[1] + 1
 
         gpu_in1 = np.zeros([padded_size[0],padded_size[1]])
-        gpu_in1[0:padded_size[0]/2,0:padded_size[1]/2] = in1
+        gpu_in1[padded_size[0]/4:3*padded_size[0]/4,padded_size[1]/4:3*padded_size[1]/4] = in1
         gpu_in1 = gpuarray.to_gpu_async(gpu_in1.astype(np.float32))
     else:
         output_size = np.array(in1.shape)
@@ -94,7 +96,7 @@ def gpu_r2c_fft(in1, padded=True, load_gpu=False):
     else:
         return gpu_out1.get()
 
-def gpu_c2r_ifft(in1, is_gpuarray=True, is_padded=True):
+def gpu_c2r_ifft(in1, is_gpuarray=True, unpad=True):
     """
     This function makes use of the scikits implementation of the FFT for GPUs to take the complex to real IFFT.
 
@@ -115,10 +117,8 @@ def gpu_c2r_ifft(in1, is_gpuarray=True, is_padded=True):
     output_size = np.array(in1.shape)
     output_size[1] = 2*(output_size[1]-1)
 
-    # TODO: THIS NEEDS TO RELIABLY RETURN WHAT I WANT. WEIRD BEHAVIOUR DUE TO THE PADDED OR UNPADDED BEHAVIOUR.
-
-    if is_padded:
-        out1_slice = tuple(slice(0.5*sz-1,1.5*sz-1) for sz in 0.5*output_size)
+    if unpad:
+        out1_slice = tuple(slice(0.5*sz,1.5*sz) for sz in 0.5*output_size)
     else:
         out1_slice = tuple(slice(0,sz) for sz in output_size)
 
@@ -130,26 +130,59 @@ def gpu_c2r_ifft(in1, is_gpuarray=True, is_padded=True):
 
 if __name__ == "__main__":
     for i in range(1):
-        delta = np.zeros([512,512])
-        delta[255,255] = 1
-        fftdelta = gpu_r2c_fft(delta.astype(np.float32), padded=True, load_gpu=True)
-
         np.random.seed(1)
-        a = np.random.randn(512,512).astype(np.float32)
+        a = np.random.randn(4096,4096).astype(np.float32)
 
-        paddedrand = np.zeros([1024,1024])
-        paddedrand[256:768,256:768] = a
-        # b = gpu_r2c_fft(a, padded=True, load_gpu=True)
-        # c = np.fft.rfft2(a)
-        # bb = gpu_c2r_ifft(b, is_padded=True)
-        # cc = np.fft.irfft2(c)
+        delta = np.zeros_like(a)
+        delta[delta.shape[0]/2-1,delta.shape[1]/2-1] = 1
 
-        # print bb, cc, a
+        fftdelta1 = gpu_r2c_fft(delta.astype(np.float32), pad_input=False, load_gpu=True)
+        fftdelta2 = gpu_r2c_fft(delta.astype(np.float32), pad_input=True, load_gpu=True)
 
-        d = fft_convolve(a, fftdelta, use_gpu=True, conv_mode='linear')
-        e = fft_convolve(a, delta, use_gpu=False, conv_mode='linear')
+        t = 0
 
-        print d, e, a
+        for i in range(10):
+            t1 = time.time()
+            b = fft_convolve(a, fftdelta1, use_gpu=True, conv_mode='circular')
+            t += time.time() - t1
+
+        print "GPU - CIRCULAR AVG TIME:", t/10
+
+        t = 0
+
+        for i in range(5):
+            t1 = time.time()
+            c = fft_convolve(a, np.fft.rfft2(delta), use_gpu=False, conv_mode='circular')
+            t += time.time() - t1
+
+        print "CPU - CIRCULAR AVG TIME:", t/5
+
+        t = 0
+
+        for i in range(10):
+            t1 = time.time()
+            d = fft_convolve(a, fftdelta2, use_gpu=True, conv_mode='linear')
+            t += time.time() - t1
+
+        print "GPU - LINEAR AVG TIME:", t/10
+
+        t = 0
+
+        for i in range(1):
+            t1 = time.time()
+            e = fft_convolve(a, delta, use_gpu=False, conv_mode='linear')
+            t += time.time() - t1
+
+        print "CPU - LINEAR AVG TIME:", t/1
+
+        print "GPU - CIRCULAR MAX ERROR:", np.max(np.abs(b-a))
+        print "CPU - CIRCULAR MAX ERROR:", np.max(np.abs(c-a))
+        print "GPU - LINEAR MAX ERROR:", np.max(np.abs(d-a))
+        print "CPU - LINEAR MAX ERROR:", np.max(np.abs(e-a))
+
+        print np.max(np.abs(a-gpu_c2r_ifft(gpu_r2c_fft(a,pad_input=False,load_gpu=True),unpad=False)))
+
+
 
 
 # def threshold_array(in1, max_scale, initial_run=False):
