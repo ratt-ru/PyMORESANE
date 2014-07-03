@@ -1,10 +1,4 @@
 import numpy as np
-from scipy import ndimage
-from scipy.optimize import curve_fit
-from scipy.signal import fftconvolve
-import time
-import pyfits
-import pylab as pb
 
 try:
     import pycuda.autoinit
@@ -149,74 +143,3 @@ def pad_array(in1):
     out1[padded_size[0]/4:3*padded_size[0]/4,padded_size[1]/4:3*padded_size[1]/4] = in1
 
     return out1
-
-if __name__ == "__main__":
-    for i in range(1):
-        np.random.seed(1)
-        a = np.random.randn(4096,4096).astype(np.float32)
-
-        img_hdu_list = pyfits.open("3C147.fits")
-        psf_hdu_list = pyfits.open("3C147_PSF.fits")
-
-        dirty_data = (img_hdu_list[0].data[0,0,:,:]).astype(np.float32)
-        psf_data = (psf_hdu_list[0].data[0,0,:,:]).astype(np.float32)
-
-        img_hdu_list.close()
-        psf_hdu_list.close()
-
-        a = dirty_data
-        delta = psf_data
-
-        fftdelta1 = gpu_r2c_fft(psf_data, load_gpu=True)
-        fftdelta2 = pad_array(psf_data)
-        fftdelta2 = gpu_r2c_fft(fftdelta2, load_gpu=True)
-
-        t = 0
-
-        for i in range(10):
-            t1 = time.time()
-            b = fft_convolve(a, fftdelta1, use_gpu=True, conv_mode='circular')
-            t += time.time() - t1
-
-        print "GPU - CIRCULAR AVG TIME:", t/10
-
-        t = 0
-
-        for i in range(5):
-            t1 = time.time()
-            c = fft_convolve(a, np.fft.rfft2(delta), use_gpu=False, conv_mode='circular')
-            t += time.time() - t1
-
-        print "CPU - CIRCULAR AVG TIME:", t/5
-
-        t = 0
-
-        for i in range(10):
-            t1 = time.time()
-            d = fft_convolve(a, fftdelta2, use_gpu=True, conv_mode='linear')
-            t += time.time() - t1
-
-        print "GPU - LINEAR AVG TIME:", t/10
-
-        t = 0
-
-        for i in range(1):
-            t1 = time.time()
-            e = fft_convolve(a, np.fft.rfft2(pad_array(delta)), use_gpu=False, conv_mode='linear')
-            t += time.time() - t1
-
-        print "CPU - LINEAR AVG TIME:", t/1
-
-        # print "GPU - CIRCULAR MAX ERROR:", np.max(np.abs(b-a))
-        # print "GPU - CIRCULAR AVG ERROR:", np.average(np.abs(b-a))
-        # print "CPU - CIRCULAR MAX ERROR:", np.max(np.abs(c-a))
-        # print "CPU - CIRCULAR AVG ERROR:", np.average(np.abs(c-a))
-        # print "GPU - LINEAR MAX ERROR:", np.max(np.abs(d-a))
-        # print "GPU - LINEAR AVG ERROR:", np.average(np.abs(d-a))
-        # print "CPU - LINEAR MAX ERROR:", np.max(np.abs(e-a))
-        # print "CPU - LINEAR MAX ERROR:", np.average(np.abs(e-a))
-
-        print "CIRCULAR MAX ERROR:", np.max(np.abs(b-c))
-        print "CIRCULAR AVG ERROR:", np.average(np.abs(b-c))
-        print "LINEAR MAX ERROR:", np.max(np.abs(d-e))
-        print "LINEAR AVG ERROR:", np.average(np.abs(d-e))
