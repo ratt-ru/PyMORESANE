@@ -19,8 +19,9 @@ def iuwt_decomposition(in1, scale_count, scale_adjust=0, mode='ser', core_count=
     INPUTS:
     in1                 (no default):       Array on which the decomposition is to be performed.
     scale_count         (no default):       Maximum scale to be considered.
-    mode                (default='ser')     Implementation of the IUWT to be used.
-    core_count          (default=1)         Additional option for multiprocessing - specifies core count.
+    scale_adjust        (default=0):        Adjustment to scale value if first scales are of no interest.
+    mode                (default='ser'):    Implementation of the IUWT to be used.
+    core_count          (default=1):        Additional option for multiprocessing - specifies core count.
 
     OUTPUTS:
     Returns the decomposition.
@@ -63,6 +64,7 @@ def ser_iuwt_decomposition(in1, scale_count, scale_adjust=0):
     INPUTS:
     in1                 (no default): Array on which the decomposition is to be performed.
     scale_count         (no default): Maximum scale to be considered.
+    scale_adjust        (default=0):  Adjustment to scale value if first scales are of no interest.
 
     OUTPUTS:
     detail_coeffs       (no default): Array containing the detail coefficients and the smoothed image.
@@ -188,6 +190,7 @@ def mp_iuwt_decomposition(in1, scale_count, scale_adjust, core_count):
     INPUTS:
     in1                 (no default):   Array on which the decomposition is to be performed.
     scale_count         (no default):   Maximum scale to be considered.
+    scale_adjust        (default=0):    Adjustment to scale value if first scales are of no interest.
     core_count          (no default):   Indicates the number of cores to be used.
 
     OUTPUTS:
@@ -372,6 +375,7 @@ def gpu_iuwt_decomposition(in1, scale_count, scale_adjust):
     INPUTS:
     in1                 (no default): Array on which the decomposition is to be performed.
     scale_count         (no default): Maximum scale to be considered.
+    scale_adjust        (default=0):  Adjustment to scale value if first scales are of no interest.
 
     OUTPUTS:
     detail_coeffs       (no default): Array containing the detail coefficients and the smoothed image.
