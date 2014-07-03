@@ -11,7 +11,7 @@ try:
 except:
     print "Pycuda unavailable - GPU mode will fail."
 
-def iuwt_decomposition(in1, scale_count, mode='ser', core_count=1):
+def iuwt_decomposition(in1, scale_count, scale_adjust=0, mode='ser', core_count=1):
     """
     This function serves as a handler for the different implementations of the IUWT decomposition. I allows the
     different methods to be used almost interchangeably.
@@ -27,11 +27,11 @@ def iuwt_decomposition(in1, scale_count, mode='ser', core_count=1):
     """
 
     if mode=='ser':
-        return ser_iuwt_decomposition(in1, scale_count)
+        return ser_iuwt_decomposition(in1, scale_count, scale_adjust)
     elif mode=='mp':
-        return mp_iuwt_decomposition(in1, scale_count, core_count)
+        return mp_iuwt_decomposition(in1, scale_count, scale_adjust, core_count)
     elif mode=='gpu':
-        return gpu_iuwt_decomposition(in1, scale_count)
+        return gpu_iuwt_decomposition(in1, scale_count, scale_adjust)
 
 def iuwt_recomposition(in1, scale_adjust=0, mode='ser', core_count=1):
     """
@@ -55,7 +55,7 @@ def iuwt_recomposition(in1, scale_adjust=0, mode='ser', core_count=1):
     elif mode=='gpu':
         return gpu_iuwt_recomposition(in1, scale_adjust)
 
-def ser_iuwt_decomposition(in1, scale_count):
+def ser_iuwt_decomposition(in1, scale_count, scale_adjust=0):
     """
     This function calls the a trous algorithm code to decompose the input into its wavelet coefficients. This is
     the isotropic undecimated wavelet transform implemented for a single CPU.
@@ -70,62 +70,28 @@ def ser_iuwt_decomposition(in1, scale_count):
 
     wavelet_filter = (1./16)*np.array([1,4,6,4,1])      # Filter for use in the a trous algorithm.
 
-    detail_coeffs = np.empty([scale_count+1, in1.shape[0], in1.shape[1]])   # Initialises a zero array to
-                                                                            # store the coefficients.
+    detail_coeffs = np.empty([scale_count-scale_adjust+1, in1.shape[0], in1.shape[1]])  # Initialises a zero array to
+                                                                                        # store the coefficients.
 
     C0 = in1    # Sets the initial value to be the image.
+
+    if scale_adjust>0:
+        for i in range(0, scale_adjust):
+            C = ser_a_trous(C0, wavelet_filter, i)
+            C0 = C
 
     # The following loop calculates the wavelet coefficients based on values of a trous algorithm for C0 and C. C0 is
     # resassigned the value of C on each loop.
 
-    for i in range(scale_count):
+    for i in range(scale_adjust,scale_count):
         C = ser_a_trous(C0, wavelet_filter, i)             # Approximation coefficients.
         C1 = ser_a_trous(C, wavelet_filter, i)
-        detail_coeffs[i,:,:] = C0 - C1                          # Detail coefficients.
+        detail_coeffs[i-scale_adjust,:,:] = C0 - C1                          # Detail coefficients.
         C0 = C
 
-    detail_coeffs[scale_count,:,:] = C      # The coeffs at value scale_count are assigned to the last value of C.
+    detail_coeffs[scale_count-scale_adjust,:,:] = C      # The coeffs at value scale_count are assigned to the last value of C.
 
     return detail_coeffs
-
-# def ser_iuwt_decomposition_v2(self, in1, scale_count, scale_adjust):
-#     """
-#     This function replicates the functionality of stardec_v2_g2.m in Arwa's original code. In particular it make use of
-#     the a trous algorithm for the decomposition of the image into wavelets. The output of this function is a matrix
-#     containing the wavelet coefficients. This is the isotropic undecimated wavelet transform. This seems to be a
-#     version which allows for the use of scaleadjust - can operate on a smaller subregion of the data. Accepts the
-#     following parameters:
-#
-#     realimage       (no default):       Array containing an image.
-#     scalecount      (no default):       Value corresponding the the maximum scale of interest.
-#     scaleadjust     (no default):       A value which reduces memory use by reducing the size of the array to be as
-#                                         small as possible yet contain all the information.
-#     """
-#
-#     wavelet_filter = (1./16)*np.array([1,4,6,4,1])      # Filter for use in the a trous algorithm.
-#
-#     detail_coeffs = np.zeros([scale_count-scale_adjust, in1.shape[0], in1.shape[1]])# Creates array in which the
-#                                                                                     # recomposition can be stored.
-#
-#     C0 = in1                              # Sets the initial value equal to the image values.
-#
-#     # If scaleadjust is non-zero, then a new initial value of C0 is calculated to correspond to the scaleadjust value.
-#
-#     if scale_adjust>0:
-#         for i in range(0, scale_adjust):
-#             C = self.ser_a_trous(C0, wavelet_filter, i)
-#             C0 = C
-#
-#     # The following loop calculates the wavelet coefficients based on values of a trous algorithm for C0 and C. C0 is
-#     # resassigned the value of C on each loop.
-#
-#     for i in range(scale_adjust, scale_count):
-#         C = self.ser_a_trous(C0, wavelet_filter, i)                                 # Approximation coefficients.
-#         C1 = self.ser_a_trous(C, wavelet_filter, i)
-#         detail_coeffs[i-scaleadjust,:,:] = C0 - C1                                  # Detail coefficients.
-#         C0 = C
-#
-#     return detail_coeffs
 
 def ser_iuwt_recomposition(in1, scale_adjust):
     """
@@ -214,7 +180,7 @@ def ser_a_trous(C0, filter, scale):
 
     return C1
 
-def mp_iuwt_decomposition(in1, scale_count, core_count):
+def mp_iuwt_decomposition(in1, scale_count, scale_adjust, core_count):
     """
     This function calls the a trous algorithm code to decompose the input into its wavelet coefficients. This is
     the isotropic undecimated wavelet transform implemented for multiple CPUs.
@@ -232,20 +198,26 @@ def mp_iuwt_decomposition(in1, scale_count, core_count):
 
     C0 = in1                                            # Sets the initial value to be the image.
 
-    detail_coeffs = np.empty([scale_count+1,C0.shape[0],C0.shape[1]]) # Initialises a zero array to
-                                                                      # store the coefficients.
+    detail_coeffs = np.empty([scale_count-scale_adjust+1, C0.shape[0], C0.shape[1]])    # Initialises an empty array to
+                                                                                        # store the coefficients.
+
+    if scale_adjust>0:
+        for i in range(0, scale_adjust):
+            C = mp_a_trous(C0, wavelet_filter, i, core_count)
+            C0 = C
 
     # The following loop calculates the wavelet coefficients using the a trous algorithm for C0 and C. C0 is
     # reassigned the value of C on each loop - C0 is always the smoothest version of the input image.
 
-    for i in range(scale_count):
+    for i in range(scale_adjust,scale_count):
         C = mp_a_trous(C0, wavelet_filter, i, core_count)              # Approximation coefficients.
         C1 = mp_a_trous(C, wavelet_filter, i, core_count)
-        detail_coeffs[i,:,:] = C0 - C1                                      # Detail coefficients.
+        detail_coeffs[i-scale_adjust,:,:] = C0 - C1                                      # Detail coefficients.
         C0 = C
 
-    detail_coeffs[scale_count,:,:] = C      # The coeffs at value scale_count are assigned to the last value of C
-                                            # which corresponds to the smoothest version of the input image.
+    detail_coeffs[scale_count-scale_adjust,:,:] = C     # The coeffs at value scale_count are assigned to the last
+                                                        # value of C which corresponds to the smoothest version of
+                                                        # the input image.
     return detail_coeffs
 
 def mp_iuwt_recomposition(in1, scale_adjust, core_count):
@@ -392,7 +364,7 @@ def mp_a_trous_kernel(C0, wavelet_filter, scale, slice_ind, slice_width, r_or_c=
 
         C0[lower_bound:upper_bound,:] = col_conv
 
-def gpu_iuwt_decomposition(in1, scale_count):
+def gpu_iuwt_decomposition(in1, scale_count, scale_adjust):
     """
     This function calls the a trous algorithm code to decompose the input into its wavelet coefficients. This is
     the isotropic undecimated wavelet transform implemented for GPUs.
@@ -408,23 +380,28 @@ def gpu_iuwt_decomposition(in1, scale_count):
     wavelet_filter = (1./16)*np.array([1,4,6,4,1], dtype=np.float32)
     wavelet_filter = gpuarray.to_gpu_async(wavelet_filter)
 
-    detail_coeffs = np.empty([scale_count+1,in1.shape[0],in1.shape[1]]) # Initialises a zero array to
-                                                                        # store the coefficients.
+    detail_coeffs = np.empty([scale_count-scale_adjust+1,in1.shape[0],in1.shape[1]])    # Initialises a zero array to
+                                                                                        # store the coefficients.
 
     C0 = gpuarray.to_gpu_async(in1.astype(np.float32))                  # Sends the initial value to the GPU.
+
+    if scale_adjust>0:
+        for i in range(0, scale_adjust):
+            C = gpu_a_trous(C0, wavelet_filter, i)
+            C0 = C
 
     # The following loop calculates the detail coefficients using the a trous algorithm for C0 and C. C0 is
     # reassigned the value of C on each loop - C is the smoothest version of the input image.
 
-    for i in range(scale_count):
-        C = gpu_a_trous(C0, wavelet_filter, i)                             # Wavelet coefficients.
+    for i in range(scale_adjust,scale_count):
+        C = gpu_a_trous(C0, wavelet_filter, i)                      # Wavelet coefficients.
         C1 = gpu_a_trous(C, wavelet_filter, i)
-        detail_coeffs[i,:,:] = (C0 - C1).get_async()            # Calculates and stores the detail coefficients.
+        detail_coeffs[i-scale_adjust,:,:] = (C0 - C1).get_async()   # Calculates and stores the detail coefficients.
         C0 = C
 
-    detail_coeffs[scale_count,:,:] = C.get()        # The coeffs at value scale_count are assigned to the last
-                                                    # value of C which corresponds to the smoothest version of
-                                                    # the input image.
+    detail_coeffs[scale_count-scale_adjust,:,:] = C.get()   # The coeffs at value scale_count are assigned to
+                                                                # the last value of C which corresponds to the
+                                                                # smoothest version of the input image.
     return detail_coeffs
 
 def gpu_iuwt_recomposition(in1, scale_adjust):
@@ -611,3 +588,11 @@ def gpu_a_trous(in1, wavelet_filter, scale):
 
     return in1_copy
 
+# if __name__ == "__main__":
+#     test = np.random.randn(512,512).astype(np.float32)
+#     result1 = iuwt_decomposition(test,4, scale_adjust=2)
+#
+#     result2 = iuwt_recomposition(result1,scale_adjust=2,mode="ser")
+#
+#     print np.max(result2-result1)
+#     print result2.shape
