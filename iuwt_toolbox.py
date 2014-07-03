@@ -3,6 +3,7 @@ from scipy import ndimage
 from scipy.optimize import curve_fit
 from scipy.signal import fftconvolve
 import time
+import pyfits
 import pylab as pb
 
 try:
@@ -31,6 +32,7 @@ def fft_convolve(in1, in2, use_gpu=False, conv_mode="linear"):
     # memory.
 
     if use_gpu:
+
         if conv_mode=="linear":
             fft_in1 = pad_array(in1)
             fft_in1 = gpu_r2c_fft(fft_in1, load_gpu=True)
@@ -43,6 +45,7 @@ def fft_convolve(in1, in2, use_gpu=False, conv_mode="linear"):
             out1_slice = tuple(slice(0.5*sz,1.5*sz) for sz in in1.shape)
 
             return np.fft.fftshift(conv_in1_in2)[out1_slice]
+
         elif conv_mode=="circular":
             fft_in1 = gpu_r2c_fft(in1, load_gpu=True)
             fft_in2 = in2
@@ -53,8 +56,15 @@ def fft_convolve(in1, in2, use_gpu=False, conv_mode="linear"):
 
             return np.fft.fftshift(conv_in1_in2)
     else:
+
         if conv_mode=="linear":
-            return fftconvolve(in1, np.rot90(in2,2), mode='same')
+            fft_in1 = pad_array(in1)
+            fft_in2 = in2
+
+            out1_slice = tuple(slice(0.5*sz,1.5*sz) for sz in in1.shape)
+
+            return np.fft.fftshift(np.fft.irfft2(fft_in2*np.fft.rfft2(fft_in1)))[out1_slice]
+
         elif conv_mode=="circular":
             return np.fft.fftshift(np.fft.irfft2(in2*np.fft.rfft2(in1)))
 
@@ -145,11 +155,20 @@ if __name__ == "__main__":
         np.random.seed(1)
         a = np.random.randn(4096,4096).astype(np.float32)
 
-        delta = np.zeros_like(a)
-        delta[delta.shape[0]/2,delta.shape[1]/2] = 1
+        img_hdu_list = pyfits.open("3C147.fits")
+        psf_hdu_list = pyfits.open("3C147_PSF.fits")
 
-        fftdelta1 = gpu_r2c_fft(delta.astype(np.float32), load_gpu=True)
-        fftdelta2 = pad_array(delta)
+        dirty_data = (img_hdu_list[0].data[0,0,:,:]).astype(np.float32)
+        psf_data = (psf_hdu_list[0].data[0,0,:,:]).astype(np.float32)
+
+        img_hdu_list.close()
+        psf_hdu_list.close()
+
+        a = dirty_data
+        delta = psf_data
+
+        fftdelta1 = gpu_r2c_fft(psf_data, load_gpu=True)
+        fftdelta2 = pad_array(psf_data)
         fftdelta2 = gpu_r2c_fft(fftdelta2, load_gpu=True)
 
         t = 0
@@ -183,58 +202,21 @@ if __name__ == "__main__":
 
         for i in range(1):
             t1 = time.time()
-            e = fft_convolve(a, delta, use_gpu=False, conv_mode='linear')
+            e = fft_convolve(a, np.fft.rfft2(pad_array(delta)), use_gpu=False, conv_mode='linear')
             t += time.time() - t1
 
         print "CPU - LINEAR AVG TIME:", t/1
 
-        print "GPU - CIRCULAR MAX ERROR:", np.max(np.abs(b-a))
-        print "GPU - CIRCULAR AVG ERROR:", np.average(np.abs(b-a))
-        print "CPU - CIRCULAR MAX ERROR:", np.max(np.abs(c-a))
-        print "CPU - CIRCULAR AVG ERROR:", np.average(np.abs(c-a))
-        print "GPU - LINEAR MAX ERROR:", np.max(np.abs(d-a))
-        print "GPU - LINEAR AVG ERROR:", np.average(np.abs(d-a))
-        print "CPU - LINEAR MAX ERROR:", np.max(np.abs(e-a))
-        print "CPU - LINEAR MAX ERROR:", np.average(np.abs(e-a))
+        # print "GPU - CIRCULAR MAX ERROR:", np.max(np.abs(b-a))
+        # print "GPU - CIRCULAR AVG ERROR:", np.average(np.abs(b-a))
+        # print "CPU - CIRCULAR MAX ERROR:", np.max(np.abs(c-a))
+        # print "CPU - CIRCULAR AVG ERROR:", np.average(np.abs(c-a))
+        # print "GPU - LINEAR MAX ERROR:", np.max(np.abs(d-a))
+        # print "GPU - LINEAR AVG ERROR:", np.average(np.abs(d-a))
+        # print "CPU - LINEAR MAX ERROR:", np.max(np.abs(e-a))
+        # print "CPU - LINEAR MAX ERROR:", np.average(np.abs(e-a))
 
-# def threshold_array(in1, max_scale, initial_run=False):
-#     """
-#     This function performs the thresholding of the values in in1 at various sigma levels. When
-#     initialrun is True, thresholding will be performed at 5 sigma uniformly. When it is False, thresholding is
-#     performed at 3 sigma for scales less than maxscale. An additional 3 sigma threshold is also returned for maxscale.
-#     Accepts the following paramters:
-#
-#     in1                     (no default):   The array to which the threshold is to be applied.
-#     max_scale               (no default):   The maximum scale of of the decomposition.
-#     initialrun              (default=False):A boolean which determines whether thresholding is at 3 or 5 sigma.
-#     """
-#
-#     # The following establishes which thresholding level is of interest.
-#
-#     if initial_run:
-#         sigma_level = 5
-#     else:
-#         sigma_level = 3
-#
-#     # The following loop iterates up to maxscale, and calculates the thresholded components using the functionality
-#     # of np.where to create masks at each scale. Components of interest are determined by whether they are within
-#     # some sigma of the threshold level, which is defined to be the median of the absolute values of the current
-#     # scale divided by some factor, 0.6754.
-#
-#     for i in range(max_scale):
-#         threshold_level = (np.median(np.abs(in1[i,:,:]))/0.6754)
-#
-#         if (i==(max_scale-1))&~initial_run:
-#             mask = np.where((np.abs(in1[i,:,:])<(sigma_level*threshold_level)),0,1)
-#             thresh3sigma = (mask*in1[i,:,:] + np.abs(mask*in1[i,:,:]))/2
-#             sigma_level = 5
-#
-#         mask = np.where((np.abs(in1[i,:,:])<(sigma_level*threshold_level)),0,1)
-#         in1[i,:,:] = (mask*in1[i,:,:] + np.abs(mask*in1[i,:,:]))/2
-#
-#     # The following simply determines which values to return.
-#
-#     if initial_run:
-#         return in1
-#     else:
-#         return in1, thresh3sigma
+        print "CIRCULAR MAX ERROR:", np.max(np.abs(b-c))
+        print "CIRCULAR AVG ERROR:", np.average(np.abs(b-c))
+        print "LINEAR MAX ERROR:", np.max(np.abs(d-e))
+        print "LINEAR AVG ERROR:", np.average(np.abs(d-e))
