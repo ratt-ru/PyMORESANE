@@ -29,7 +29,7 @@ def fft_convolve(in1, in2, use_gpu=False, conv_mode="linear"):
 
         if conv_mode=="linear":
             fft_in1 = pad_array(in1)
-            fft_in1 = gpu_r2c_fft(fft_in1, load_gpu=True)
+            fft_in1 = gpu_r2c_fft(fft_in1, store_on_gpu=True)
             fft_in2 = in2
 
             conv_in1_in2 = fft_in1*fft_in2
@@ -41,7 +41,7 @@ def fft_convolve(in1, in2, use_gpu=False, conv_mode="linear"):
             return np.fft.fftshift(conv_in1_in2)[out1_slice]
 
         elif conv_mode=="circular":
-            fft_in1 = gpu_r2c_fft(in1, load_gpu=True)
+            fft_in1 = gpu_r2c_fft(in1, store_on_gpu=True)
             fft_in2 = in2
 
             conv_in1_in2 = fft_in1*fft_in2
@@ -62,14 +62,14 @@ def fft_convolve(in1, in2, use_gpu=False, conv_mode="linear"):
         elif conv_mode=="circular":
             return np.fft.fftshift(np.fft.irfft2(in2*np.fft.rfft2(in1)))
 
-def gpu_r2c_fft(in1, is_gpuarray=False, load_gpu=False):
+def gpu_r2c_fft(in1, is_gpuarray=False, store_on_gpu=False):
     """
     This function makes use of the scikits implementation of the FFT for GPUs to take the real to complex FFT.
 
     INPUTS:
-    in1         (no default):       The array on which the FFT is to be performed.
-    is_gpuarray (default=True):     Boolean specifier for whether or not input is on the gpu.
-    load_gpu    (default=False):    Boolean specifier for whether the result is to be left on the gpu or not.
+    in1             (no default):       The array on which the FFT is to be performed.
+    is_gpuarray     (default=True):     Boolean specifier for whether or not input is on the gpu.
+    store_on_gpu    (default=False):    Boolean specifier for whether the result is to be left on the gpu or not.
 
     OUTPUTS:
     gpu_out1        (no default):   The gpu array containing the result.
@@ -89,19 +89,19 @@ def gpu_r2c_fft(in1, is_gpuarray=False, load_gpu=False):
     gpu_plan = Plan(gpu_in1.shape, np.float32, np.complex64)
     fft(gpu_in1, gpu_out1, gpu_plan)
 
-    if load_gpu:
+    if store_on_gpu:
         return gpu_out1
     else:
         return gpu_out1.get()
 
-def gpu_c2r_ifft(in1, is_gpuarray=False, load_gpu=False):
+def gpu_c2r_ifft(in1, is_gpuarray=False, store_on_gpu=False):
     """
     This function makes use of the scikits implementation of the FFT for GPUs to take the complex to real IFFT.
 
     INPUTS:
-    in1         (no default):       The array on which the IFFT is to be performed.
-    is_gpuarray (default=True):     Boolean specifier for whether or not input is on the gpu.
-    load_gpu    (default=False):    Boolean specifier for whether the result is to be left on the gpu or not.
+    in1             (no default):       The array on which the IFFT is to be performed.
+    is_gpuarray     (default=True):     Boolean specifier for whether or not input is on the gpu.
+    store_on_gpu    (default=False):    Boolean specifier for whether the result is to be left on the gpu or not.
 
     OUTPUTS:
     gpu_out1        (no default):   The gpu array containing the result.
@@ -121,7 +121,7 @@ def gpu_c2r_ifft(in1, is_gpuarray=False, load_gpu=False):
     gpu_plan = Plan(output_size, np.complex64, np.float32)
     ifft(gpu_in1, gpu_out1, gpu_plan, True)
 
-    if load_gpu:
+    if store_on_gpu:
         return gpu_out1
     else:
         return gpu_out1.get()
