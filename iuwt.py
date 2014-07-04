@@ -11,7 +11,7 @@ try:
 except:
     print "Pycuda unavailable - GPU mode will fail."
 
-def iuwt_decomposition(in1, scale_count, scale_adjust=0, mode='ser', core_count=1):
+def iuwt_decomposition(in1, scale_count, scale_adjust=0, store_smoothed=False, mode='ser', core_count=2):
     """
     This function serves as a handler for the different implementations of the IUWT decomposition. I allows the
     different methods to be used almost interchangeably.
@@ -20,6 +20,7 @@ def iuwt_decomposition(in1, scale_count, scale_adjust=0, mode='ser', core_count=
     in1                 (no default):       Array on which the decomposition is to be performed.
     scale_count         (no default):       Maximum scale to be considered.
     scale_adjust        (default=0):        Adjustment to scale value if first scales are of no interest.
+    store_smoothed      (default=False):    Boolean specifier for whether the smoothed image is stored or not.
     mode                (default='ser'):    Implementation of the IUWT to be used.
     core_count          (default=1):        Additional option for multiprocessing - specifies core count.
 
@@ -28,15 +29,15 @@ def iuwt_decomposition(in1, scale_count, scale_adjust=0, mode='ser', core_count=
     """
 
     if mode=='ser':
-        return ser_iuwt_decomposition(in1, scale_count, scale_adjust)
+        return ser_iuwt_decomposition(in1, scale_count, scale_adjust, store_smoothed)
     elif mode=='mp':
-        return mp_iuwt_decomposition(in1, scale_count, scale_adjust, core_count)
+        return mp_iuwt_decomposition(in1, scale_count, scale_adjust, store_smoothed, core_count)
     elif mode=='gpu':
-        return gpu_iuwt_decomposition(in1, scale_count, scale_adjust)
+        return gpu_iuwt_decomposition(in1, scale_count, scale_adjust, store_smoothed)
 
 def iuwt_recomposition(in1, scale_adjust=0, mode='ser', core_count=1):
     """
-    This function serves as a handler for the different implementations of the IUWT decomposition. I allows the
+    This function serves as a handler for the different implementations of the IUWT decomposition. It allows the
     different methods to be used almost interchangeably.
 
     INPUTS:
@@ -56,15 +57,16 @@ def iuwt_recomposition(in1, scale_adjust=0, mode='ser', core_count=1):
     elif mode=='gpu':
         return gpu_iuwt_recomposition(in1, scale_adjust)
 
-def ser_iuwt_decomposition(in1, scale_count, scale_adjust=0):
+def ser_iuwt_decomposition(in1, scale_count, scale_adjust, store_smoothed):
     """
     This function calls the a trous algorithm code to decompose the input into its wavelet coefficients. This is
     the isotropic undecimated wavelet transform implemented for a single CPU.
 
     INPUTS:
-    in1                 (no default): Array on which the decomposition is to be performed.
-    scale_count         (no default): Maximum scale to be considered.
-    scale_adjust        (default=0):  Adjustment to scale value if first scales are of no interest.
+    in1                 (no default):   Array on which the decomposition is to be performed.
+    scale_count         (no default):   Maximum scale to be considered.
+    scale_adjust        (default=0):    Adjustment to scale value if first scales are of no interest.
+    store_smoothed      (default=False):Boolean specifier for whether the smoothed image is stored or not.
 
     OUTPUTS:
     detail_coeffs       (no default): Array containing the detail coefficients and the smoothed image.
@@ -72,8 +74,12 @@ def ser_iuwt_decomposition(in1, scale_count, scale_adjust=0):
 
     wavelet_filter = (1./16)*np.array([1,4,6,4,1])      # Filter for use in the a trous algorithm.
 
-    detail_coeffs = np.empty([scale_count-scale_adjust+1, in1.shape[0], in1.shape[1]])  # Initialises a zero array to
-                                                                                        # store the coefficients.
+    # Initialises a zero array to store the coefficients.
+
+    if store_smoothed:
+        detail_coeffs = np.empty([scale_count-scale_adjust+1, in1.shape[0], in1.shape[1]])
+    else:
+        detail_coeffs = np.empty([scale_count-scale_adjust, in1.shape[0], in1.shape[1]])
 
     C0 = in1    # Sets the initial value to be the image.
 
@@ -91,7 +97,8 @@ def ser_iuwt_decomposition(in1, scale_count, scale_adjust=0):
         detail_coeffs[i-scale_adjust,:,:] = C0 - C1                          # Detail coefficients.
         C0 = C
 
-    detail_coeffs[scale_count-scale_adjust,:,:] = C      # The coeffs at value scale_count are assigned to the last value of C.
+    if store_smoothed:
+        detail_coeffs[scale_count-scale_adjust,:,:] = C      # The coeffs at value scale_count are assigned to the last value of C.
 
     return detail_coeffs
 
@@ -182,7 +189,7 @@ def ser_a_trous(C0, filter, scale):
 
     return C1
 
-def mp_iuwt_decomposition(in1, scale_count, scale_adjust, core_count):
+def mp_iuwt_decomposition(in1, scale_count, scale_adjust, store_smoothed, core_count):
     """
     This function calls the a trous algorithm code to decompose the input into its wavelet coefficients. This is
     the isotropic undecimated wavelet transform implemented for multiple CPUs.
@@ -191,6 +198,7 @@ def mp_iuwt_decomposition(in1, scale_count, scale_adjust, core_count):
     in1                 (no default):   Array on which the decomposition is to be performed.
     scale_count         (no default):   Maximum scale to be considered.
     scale_adjust        (default=0):    Adjustment to scale value if first scales are of no interest.
+    store_smoothed      (default=False):Boolean specifier for whether the smoothed image is stored or not.
     core_count          (no default):   Indicates the number of cores to be used.
 
     OUTPUTS:
@@ -201,8 +209,12 @@ def mp_iuwt_decomposition(in1, scale_count, scale_adjust, core_count):
 
     C0 = in1                                            # Sets the initial value to be the image.
 
-    detail_coeffs = np.empty([scale_count-scale_adjust+1, C0.shape[0], C0.shape[1]])    # Initialises an empty array to
-                                                                                        # store the coefficients.
+    # Initialises a zero array to store the coefficients.
+
+    if store_smoothed:
+        detail_coeffs = np.empty([scale_count-scale_adjust+1, in1.shape[0], in1.shape[1]])
+    else:
+        detail_coeffs = np.empty([scale_count-scale_adjust, in1.shape[0], in1.shape[1]])
 
     if scale_adjust>0:
         for i in range(0, scale_adjust):
@@ -218,9 +230,10 @@ def mp_iuwt_decomposition(in1, scale_count, scale_adjust, core_count):
         detail_coeffs[i-scale_adjust,:,:] = C0 - C1                                      # Detail coefficients.
         C0 = C
 
-    detail_coeffs[scale_count-scale_adjust,:,:] = C     # The coeffs at value scale_count are assigned to the last
-                                                        # value of C which corresponds to the smoothest version of
-                                                        # the input image.
+    if store_smoothed:
+        detail_coeffs[scale_count-scale_adjust,:,:] = C     # The coeffs at value scale_count are assigned to the last
+                                                            # value of C which corresponds to the smoothest version of
+                                                            # the input image.
     return detail_coeffs
 
 def mp_iuwt_recomposition(in1, scale_adjust, core_count):
@@ -367,15 +380,16 @@ def mp_a_trous_kernel(C0, wavelet_filter, scale, slice_ind, slice_width, r_or_c=
 
         C0[lower_bound:upper_bound,:] = col_conv
 
-def gpu_iuwt_decomposition(in1, scale_count, scale_adjust):
+def gpu_iuwt_decomposition(in1, scale_count, scale_adjust, store_smoothed):
     """
     This function calls the a trous algorithm code to decompose the input into its wavelet coefficients. This is
     the isotropic undecimated wavelet transform implemented for GPUs.
 
     INPUTS:
-    in1                 (no default): Array on which the decomposition is to be performed.
-    scale_count         (no default): Maximum scale to be considered.
-    scale_adjust        (default=0):  Adjustment to scale value if first scales are of no interest.
+    in1                 (no default):   Array on which the decomposition is to be performed.
+    scale_count         (no default):   Maximum scale to be considered.
+    scale_adjust        (default=0):    Adjustment to scale value if first scales are of no interest.
+    store_smoothed      (default=False):Boolean specifier for whether the smoothed image is stored or not.
 
     OUTPUTS:
     detail_coeffs       (no default): Array containing the detail coefficients and the smoothed image.
@@ -384,8 +398,12 @@ def gpu_iuwt_decomposition(in1, scale_count, scale_adjust):
     wavelet_filter = (1./16)*np.array([1,4,6,4,1], dtype=np.float32)
     wavelet_filter = gpuarray.to_gpu_async(wavelet_filter)
 
-    detail_coeffs = np.empty([scale_count-scale_adjust+1,in1.shape[0],in1.shape[1]])    # Initialises a zero array to
-                                                                                        # store the coefficients.
+    # Initialises a zero array to store the coefficients.
+
+    if store_smoothed:
+        detail_coeffs = np.empty([scale_count-scale_adjust+1, in1.shape[0], in1.shape[1]])
+    else:
+        detail_coeffs = np.empty([scale_count-scale_adjust, in1.shape[0], in1.shape[1]])
 
     C0 = gpuarray.to_gpu_async(in1.astype(np.float32))                  # Sends the initial value to the GPU.
 
@@ -403,7 +421,8 @@ def gpu_iuwt_decomposition(in1, scale_count, scale_adjust):
         detail_coeffs[i-scale_adjust,:,:] = (C0 - C1).get_async()   # Calculates and stores the detail coefficients.
         C0 = C
 
-    detail_coeffs[scale_count-scale_adjust,:,:] = C.get()   # The coeffs at value scale_count are assigned to
+    if store_smoothed:
+        detail_coeffs[scale_count-scale_adjust,:,:] = C.get()   # The coeffs at value scale_count are assigned to
                                                                 # the last value of C which corresponds to the
                                                                 # smoothest version of the input image.
     return detail_coeffs
@@ -594,9 +613,10 @@ def gpu_a_trous(in1, wavelet_filter, scale):
 
 # if __name__ == "__main__":
 #     test = np.random.randn(512,512).astype(np.float32)
-#     result1 = iuwt_decomposition(test,4, scale_adjust=2)
+#     result1 = iuwt_decomposition(test, 4, scale_adjust=2, mode="mp", store_smoothed=True)
 #
-#     result2 = iuwt_recomposition(result1,scale_adjust=2,mode="ser")
+#     result2 = iuwt_decomposition(test, 4, scale_adjust=2, mode="mp")
 #
-#     print np.max(result2-result1)
+#     print np.max(result2-result1[:2,:,:])
+#     print result1.shape
 #     print result2.shape
