@@ -14,6 +14,9 @@ def threshold(in1, sigma_level=4):
     INPUTS:
     in1             (no default):   The array which is to be thresholded.
     sigma_level     (no default):   The number of estimated deviations at which thresholding is to occur.
+
+    OUTPUTS:
+    out1            (no default):   An thresholded version of in1.
     """
 
     out1 = np.empty_like(in1)
@@ -29,6 +32,22 @@ def threshold(in1, sigma_level=4):
         for i in range(in1.shape[0]):
             threshold_level = np.median(np.abs(in1[i,:,:]))/0.6745          # MAD estimator for normal distribution.
             out1[i,:,:] = np.where(in1[i,:,:]<(sigma_level*threshold_level),0,1)*in1[i,:,:]
+
+    return out1
+
+def snr_ratio(in1, in2):
+    """
+    The following function simply calculates the signal to noise ratio between two signals.
+
+    INPUTS:
+    in1         (no default):   Array containing values for signal 1.
+    in2         (no default):   Array containing values for signal 2.
+
+    OUTPUTS:
+    out1        (no default):   The ratio of the signal to noise ratios of two signals.
+    """
+
+    out1 = 20*np.log10(np.linalg.norm(in1)/np.linalg.norm(in1-in2))
 
     return out1
 
