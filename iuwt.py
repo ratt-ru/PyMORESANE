@@ -117,7 +117,7 @@ def ser_iuwt_recomposition(in1, scale_adjust):
 
     wavelet_filter = (1./16)*np.array([1,4,6,4,1])      # Filter for use in the a trous algorithm.
 
-    # Following checks that IUWTobjects is not simply a single 2D array. This just ensures that the recomposition is
+    # Following checks that in1 is not simply a single 2D array. This just ensures that the recomposition is
     # the correct size.
 
     if len(in1.shape)>2:
