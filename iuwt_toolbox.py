@@ -74,10 +74,9 @@ def source_extraction(in1, max_coeff, tolerance):
     # Initialisation of the variables in which the connected components are stored, as well as the calculated local
     # maxima and their locations. The absolute maximum for the scale is stored in pagemax.
 
-    objects = np.empty_like(in1, dtype=int)                 # Variable to store the objects found by ndimage.
-    object_count = np.empty([in1.shape[0],1], dtype=int)    # Variable to store the number of objects in each scale.
-    scale_maxima = np.empty([in1.shape[0],1])               # Variable of convenience storing the maximum of each
-                                                            # scale.
+    objects = np.empty_like(in1, dtype=int)               # Variable to store the objects found by ndimage.
+    object_count = np.empty([in1.shape[0],1], dtype=int)  # Variable to store the number of objects in each scale.
+    scale_maxima = np.empty([in1.shape[0],1])             # Variable of convenience storing the maximum of each scale.
 
     # Objects is a multi-page numpy array containing the ndimage label array for a given scale.
     # objectparams contains: the scale, the position of the maximum coefficient, its value, its label and the label
@@ -92,13 +91,17 @@ def source_extraction(in1, max_coeff, tolerance):
         objects[i,:,:], object_count[i] = ndimage.label(in1[i,:,:], structure=[[1,1,1],[1,1,1],[1,1,1]])
 
     object_params = np.empty([np.sum(object_count),6])     # Variable to store the parameters of the objects' maxima.
+    scale_index = np.cumsum(object_count)
 
     lower_bound = 0
     upper_bound = 0
 
+    # This loop populates object_params with the important values pertaining to each object. In order, these are:
+    # scale, row of max, col of max, max, label at scale, label at scale+1.
+
     for i in range(in1.shape[0]):
 
-        upper_bound += object_count[i]
+        upper_bound = scale_index[i]
 
         object_params[lower_bound:upper_bound,0] = i
 
@@ -107,61 +110,63 @@ def source_extraction(in1, max_coeff, tolerance):
 
         object_params[lower_bound:upper_bound,3] = \
             in1[i, object_params[lower_bound:upper_bound,1].astype(np.int),
+                   object_params[lower_bound:upper_bound,2].astype(np.int)]
+
+        object_params[lower_bound:upper_bound,4] = \
+            objects[object_params[lower_bound:upper_bound,0].astype(np.int),
+                    object_params[lower_bound:upper_bound,1].astype(np.int),
                     object_params[lower_bound:upper_bound,2].astype(np.int)]
 
-        lower_bound = upper_bound.copy()
+        if i==(in1.shape[0]-1):
+            break
 
-    # The following loop stores the label of the object in scale n+1 for each label in scale n.
+        object_params[lower_bound:upper_bound,5] = \
+            objects[object_params[lower_bound:upper_bound,0].astype(np.int)+1,
+                    object_params[lower_bound:upper_bound,1].astype(np.int),
+                    object_params[lower_bound:upper_bound,2].astype(np.int)]
 
-    for i in range(np.sum(object_count[:-1])):
-        object_params[i,4] = objects[object_params[i,0], object_params[i,1], object_params[i,2]]
-        object_params[i,5] = objects[object_params[i,0]+1, object_params[i,1], object_params[i,2]]
+        lower_bound = scale_index[i]
 
+    # Initialises variables to store the source count as we all an empty list into which the found components can be
+    # stacked.
 
-#     # Initialises variables to store the source count as we all an empty list into which the found components can be
-#     # stacked.
-#
-#     sourcecount = 1
-#     foundobjects = []
-#
-#     # Initialises variables to store the mask for the extracted objects, as well as the objects themselves.
-#
-#     extractedobjects = np.empty(IUWTsize)
-#     extractedobjectsmask = np.zeros(IUWTsize)
-#
-#     # Determines whether or not a component is significant - if it is, its values at all scales are found and checked
-#     # for significance individually. Only sources identified in maxscale can be classed as significant.
-#
-#     for i in range(-objectcount[maxscale-1],0):
-#
-#         # The first step asses the significance of objects at maxscale. Significant objects have their values
-#         # extracted and stored in foundobjects which contains the source number, the scales at which it appears and
-#         # its labels at those scales.
-#
-#         if objectparams[i,3]>(maxcoeff*tolerance):
-#             objectlabels = objects[maxscale-1,objectparams[i,1],objectparams[i,2]]
-#             scalenumber = maxscale
-#             sourcenumber = sourcecount
-#
-#             foundobjects.append(sourcenumber)
-#             foundobjects.append(scalenumber)
-#             foundobjects.append(objectlabels)
-#
-#             # This is a call to the recursive source extraction kernel which essentially creates a tree of
-#             # significance for each object found at maxscale - it cascades back through lower scales finding
-#             # significant components of the object at maxscale.
-#
-#             foundobjects = SourceExtractionKernel(foundobjects,objectparams,objectcount,sourcenumber,maxscale-1,
-#                                                   pagemax,tolerance)
-#
-#             sourcecount += 1
-#
-#             # This additional operation generates the mask for maxscale at the 3 sigma level.
-#
-#             extractedobjectsmask[maxscale-1,:,:] += np.where(objects3sigma==
-#                                                              objects3sigma[objectparams[i,1],objectparams[i,2]],1,0)
-#
-#     foundobjects = np.asarray(foundobjects).reshape([-1,3])
+    source_number = 1
+    found_sources = []
+
+    # Initialises variables to store the mask for the extracted objects, as well as the objects themselves.
+
+    # extractedobjects = np.empty(IUWTsize)
+    # extractedobjectsmask = np.zeros(IUWTsize)
+
+    # Determines whether or not a component is significant - if it is, its values at all scales are found and checked
+    # for significance individually. Only sources identified in maxscale can be classed as significant.
+
+    for i in range(-object_count[-1],0):
+
+        # The first step asses the significance of objects at maxscale. Significant objects have their values
+        # extracted and stored in foundobjects which contains the source number, the scales at which it appears and
+        # its labels at those scales.
+
+        if object_params[i,3]>(max_coeff*tolerance):
+            object_label = object_params[i,4].astype(np.int)
+            scale_number = in1.shape[0]
+
+            found_sources.append(source_number)
+            found_sources.append(scale_number)
+            found_sources.append(object_label)
+
+            # This is a call to the recursive source extraction kernel which essentially creates a tree of
+            # significance for each object found at maxscale - it cascades back through lower scales finding
+            # significant components of the object at maxscale.
+
+            found_sources = source_extraction_kernel(found_sources, object_params, object_count, source_number,
+                                                    scale_number-1, scale_maxima, tolerance)
+
+            source_number += 1
+
+    found_sources = np.asarray(found_sources).reshape([-1,3])
+
+    print found_sources
 #
 #     # The following generates the mask for objects not at the maxscale. It simply places ones in the mask for each
 #     # label in found objects, at the appropriate scale.
@@ -180,42 +185,48 @@ def source_extraction(in1, max_coeff, tolerance):
 #
 #     return extractedobjects, pagemax
 #
-# def SourceExtractionKernel(foundobjects,objectparams,objectcount,sourcenumber,scale,pagemax,tolerance):
-#     """
-#     This is the source extraction kernel, a recursive function which finds the components of objects significant at
-#     maxscale at lower scales. Accpets the following parameters:
-#
-#     foundobjects    (no default):   List containing the currently found objects.
-#     objectparams    (no default):   The parameters of all the found objects.
-#     objectcount     (no default):   The number of objects found in each scale.
-#     sourcenumber    (no default):   The number of the source.
-#     scale           (no default):   The scale which is currently being analysed.
-#     pagemax         (no default):   The maximum wavelet coefficients for each scale.
-#     tolerance       (no default):   User defined tolerance which determines when objects are of significance.
-#     """
-#
-#     # Recursion stops once the scale value is zero.
-#
-#     if scale==0:
-#         return
-#
-#     # The end value of the list corresponds to the label of interest in scale+1.
-#
-#     nextscalelabel = foundobjects[-1]
-#
-#     # The following loops over the values for objects at the current scale and appends to the list if it finds the
-#     # label. If the coefficient at the new scale is also significant, this function is called recursively to find
-#     # what the object at the new scale is connected to.
-#
-#     for i in range(np.sum(objectcount[:scale-1]),np.sum(objectcount[:scale])-1):
-#         if objectparams[i,5]==nextscalelabel:
-#             foundobjects.append(sourcenumber)
-#             foundobjects.append(scale)
-#             foundobjects.append(int(objectparams[i,4]))
-#             if objectparams[i,3]>(pagemax[0,scale-1]*tolerance):
-#                 SourceExtractionKernel(foundobjects,objectparams,objectcount,sourcenumber,scale-1,pagemax,tolerance)
-#
-#     return foundobjects
+def source_extraction_kernel(found_sources, object_params, object_count, source_number,
+                             scale_number, scale_maxima, tolerance):
+    """
+    This is the source extraction kernel, a recursive function which finds the components of objects significant at
+    maxscale at lower scales. Accpets the following parameters:
+
+    foundobjects    (no default):   List containing the currently found objects.
+    objectparams    (no default):   The parameters of all the found objects.
+    objectcount     (no default):   The number of objects found in each scale.
+    sourcenumber    (no default):   The number of the source.
+    scale           (no default):   The scale which is currently being analysed.
+    pagemax         (no default):   The maximum wavelet coefficients for each scale.
+    tolerance       (no default):   User defined tolerance which determines when objects are of significance.
+    """
+
+    # Recursion stops once the scale value is zero.
+
+    if scale_number==0:
+        return
+
+    # The end value of the list corresponds to the label of interest in scale+1.
+
+    object_label = found_sources[-1]
+
+    # The following loops over the values for objects at the current scale and appends to the list if it finds the
+    # label. If the coefficient at the new scale is also significant, this function is called recursively to find
+    # what the object at the new scale is connected to.
+
+    for i in range(np.sum(object_count[:scale_number-1]), np.sum(object_count[:scale_number])):
+
+        if object_params[i,5]==object_label:
+
+            found_sources.append(source_number)
+            found_sources.append(scale_number)
+            found_sources.append(int(object_params[i,4]))
+
+            if object_params[i,3]>(scale_maxima[scale_number-1]*tolerance):
+
+                source_extraction_kernel(found_sources, object_params, object_count, source_number, scale_number-1,
+                                         scale_maxima, tolerance)
+
+    return found_sources
 
 if __name__=="__main__":
     img_hdu_list = pyfits.open("3C147.fits")
@@ -227,55 +238,18 @@ if __name__=="__main__":
     img_hdu_list.close()
     psf_hdu_list.close()
 
-    decomposition = iuwt.iuwt_decomposition(dirty_data,2)
+    decomposition = iuwt.iuwt_decomposition(dirty_data,3)
     print decomposition.shape
 
+    t = time.time()
     thresh_decom = threshold(decomposition, 5)
+    print time.time() - t
 
     t = time.time()
-    extraction = source_extraction(thresh_decom, 0, 0.7)
+    extraction = source_extraction(thresh_decom, np.max(thresh_decom), 0.5)
     print time.time() - t
 
     # pb.imshow(decomposition[-2,:,:])
     # pb.show()
     # pb.imshow(thresh_decom[-2,:,:])
     # pb.show()
-
-
-
-
-
-
- # Tempobjectparams are the scale, position and value of the maximum. They are stored temporarily.
- #
- #        tempobjectparams = np.zeros([object_count[i,:],6])
- #        tempobjectparams[:,0] = i
- #        tempobjectparams[:,1:3] = ndimage.maximum_position(in1[i,:,:], objects[i,:,:],
- #                                                              index=np.arange(1, object_count[i,:] + 1))
- #        tempobjectparams[:,3] = in1[i, tempobjectparams[:,1].astype(np.int), tempobjectparams[:,2].astype(np.int)]
- #
- #        # The temporary values are appeneded to the objectparams array. Appending is slow, but allows for the unknown
- #        # length of the params at each scale.
- #
- #        object_params = np.append(object_params,tempobjectparams,axis=0)
-
-# [[ 3258.     0.]
-#  [ 3259.     0.]
-#  [ 3260.  1740.]
-#  [ 3261.     0.]
-#  [ 3262.     0.]
-#  [ 3263.     0.]
-#  [ 3264.  1743.]
-#  [ 3265.  1744.]
-#  [ 3266.  1742.]
-#  [ 3267.     0.]
-#  [ 3268.  1741.]
-#  [ 3269.  1745.]
-#  [ 3270.     0.]
-#  [ 3271.  1747.]
-#  [ 3272.  1746.]
-#  [ 3273.  1745.]
-#  [ 3274.  1749.]
-#  [ 3275.     0.]
-#  [ 3276.     0.]
-#  [ 3277.  1754.]]
