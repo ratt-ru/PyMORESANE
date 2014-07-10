@@ -263,12 +263,16 @@ if __name__=="__main__":
     extraction1 = source_extraction_rev(thresh_decom, 0.1)
     print time.time() - t
 
-    # for i in range(extraction1.shape[0]):
-    #     pb.imshow(extraction1[i,:,:])
-    #     pb.show()
+    for i in range(extraction1.shape[0]):
+        pb.imshow(extraction1[i,:,:])
+        pb.show()
 
-    # t = time.time()
-    # extraction2, maxima = source_extraction(thresh_decom, np.max(thresh_decom), 0.1)
-    # print time.time() - t
-    #
-    # print np.allclose(extraction1,extraction2,1e-6)
+    t = time.time()
+    extraction2, maxima = source_extraction(thresh_decom, np.max(thresh_decom), 0.1)
+    print time.time() - t
+
+    for i in range(extraction2.shape[0]):
+        pb.imshow(extraction2[i,:,:])
+        pb.show()
+
+    print np.allclose(extraction1,extraction2,1e-6)
