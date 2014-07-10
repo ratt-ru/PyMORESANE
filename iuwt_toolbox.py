@@ -90,7 +90,8 @@ def source_extraction(in1, max_coeff, tolerance):
 
         objects[i,:,:], object_count[i] = ndimage.label(in1[i,:,:], structure=[[1,1,1],[1,1,1],[1,1,1]])
 
-    object_params = np.empty([np.sum(object_count),6])     # Variable to store the parameters of the objects' maxima.
+    object_params = np.empty([np.sum(object_count), 5], dtype=np.int)
+    object_maxima = np.empty([np.sum(object_count), 1], dtype=np.float32)
     scale_index = np.cumsum(object_count)
 
     lower_bound = 0
@@ -109,21 +110,19 @@ def source_extraction(in1, max_coeff, tolerance):
             ndimage.maximum_position(in1[i,:,:], objects[i,:,:], index=np.arange(1, object_count[i] + 1))
 
         object_params[lower_bound:upper_bound,3] = \
-            in1[i, object_params[lower_bound:upper_bound,1].astype(np.int),
-                   object_params[lower_bound:upper_bound,2].astype(np.int)]
+            objects[object_params[lower_bound:upper_bound,0],
+                    object_params[lower_bound:upper_bound,1],
+                    object_params[lower_bound:upper_bound,2]]
 
-        object_params[lower_bound:upper_bound,4] = \
-            objects[object_params[lower_bound:upper_bound,0].astype(np.int),
-                    object_params[lower_bound:upper_bound,1].astype(np.int),
-                    object_params[lower_bound:upper_bound,2].astype(np.int)]
+        object_maxima[lower_bound:upper_bound,0] = \
+            in1[i, object_params[lower_bound:upper_bound,1],
+                   object_params[lower_bound:upper_bound,2]]
 
-        if i==(in1.shape[0]-1):
-            break
-
-        object_params[lower_bound:upper_bound,5] = \
-            objects[object_params[lower_bound:upper_bound,0].astype(np.int)+1,
-                    object_params[lower_bound:upper_bound,1].astype(np.int),
-                    object_params[lower_bound:upper_bound,2].astype(np.int)]
+        if i!=(in1.shape[0]-1):
+            object_params[lower_bound:upper_bound,4] = \
+                objects[object_params[lower_bound:upper_bound,0]+1,
+                        object_params[lower_bound:upper_bound,1],
+                        object_params[lower_bound:upper_bound,2]]
 
         lower_bound = scale_index[i]
 
@@ -132,11 +131,6 @@ def source_extraction(in1, max_coeff, tolerance):
 
     source_number = 1
     found_sources = []
-
-    # Initialises variables to store the mask for the extracted objects, as well as the objects themselves.
-
-    # extractedobjects = np.empty(IUWTsize)
-    # extractedobjectsmask = np.zeros(IUWTsize)
 
     # Determines whether or not a component is significant - if it is, its values at all scales are found and checked
     # for significance individually. Only sources identified in maxscale can be classed as significant.
@@ -147,8 +141,8 @@ def source_extraction(in1, max_coeff, tolerance):
         # extracted and stored in foundobjects which contains the source number, the scales at which it appears and
         # its labels at those scales.
 
-        if object_params[i,3]>(max_coeff*tolerance):
-            object_label = object_params[i,4].astype(np.int)
+        if object_maxima[i,0]>(max_coeff*tolerance):
+            object_label = object_params[i,3]
             scale_number = in1.shape[0]
 
             found_sources.append(source_number)
@@ -159,33 +153,30 @@ def source_extraction(in1, max_coeff, tolerance):
             # significance for each object found at maxscale - it cascades back through lower scales finding
             # significant components of the object at maxscale.
 
-            found_sources = source_extraction_kernel(found_sources, object_params, object_count, source_number,
-                                                    scale_number-1, scale_maxima, tolerance)
+            found_sources = source_extraction_kernel(found_sources, object_params, object_maxima, object_count,
+                                                     source_number, scale_number-1, scale_maxima, tolerance)
 
             source_number += 1
 
     found_sources = np.asarray(found_sources).reshape([-1,3])
 
+    # The following generates the mask for objects not at the maxscale. It simply places ones in the mask for each
+    # label in found objects, at the appropriate scale.
+
+    extracted_sources_mask = np.zeros_like(in1)
+
+    for i in found_sources:
+        extracted_sources_mask[i[1]-1,:,:] += np.where(objects[i[1]-1,:,:]==i[2],1,0)
+
+    # The following fills the array with the values belonging to the extracted objects.
+
+    extracted_sources = in1*extracted_sources_mask
+
     print found_sources
-#
-#     # The following generates the mask for objects not at the maxscale. It simply places ones in the mask for each
-#     # label in found objects, at the appropriate scale.
-#
-#     for i in foundobjects:
-#         if i[1]!=maxscale:
-#             extractedobjectsmask[i[1]-1,:,:] += np.where(objects[i[1]-1,:,:]==i[2],1,0)
-#
-#     # The following fills the array with the values belonging to the extracted objects. NOTE: This has to be done in
-#     # two steps as the 3 sigma values are used at maxscale.
-#
-#     extractedobjects[0:maxscale-1,:,:] = extractedobjectsmask[0:maxscale-1,:,:]*IUWT[0:maxscale-1,:,:]
-#     extractedobjects[maxscale-1,:,:] = extractedobjectsmask[maxscale-1,:,:]*IUWT3sigma
-#
-#     print foundobjects
-#
-#     return extractedobjects, pagemax
-#
-def source_extraction_kernel(found_sources, object_params, object_count, source_number,
+
+    return extracted_sources, scale_maxima
+
+def source_extraction_kernel(found_sources, object_params, object_maxima, object_count, source_number,
                              scale_number, scale_maxima, tolerance):
     """
     This is the source extraction kernel, a recursive function which finds the components of objects significant at
@@ -215,18 +206,41 @@ def source_extraction_kernel(found_sources, object_params, object_count, source_
 
     for i in range(np.sum(object_count[:scale_number-1]), np.sum(object_count[:scale_number])):
 
-        if object_params[i,5]==object_label:
+        if object_params[i,4]==object_label:
 
             found_sources.append(source_number)
             found_sources.append(scale_number)
-            found_sources.append(int(object_params[i,4]))
+            found_sources.append(object_params[i,3])
 
-            if object_params[i,3]>(scale_maxima[scale_number-1]*tolerance):
+            if object_maxima[i,0]>(scale_maxima[scale_number-1]*tolerance):
 
-                source_extraction_kernel(found_sources, object_params, object_count, source_number, scale_number-1,
-                                         scale_maxima, tolerance)
+                source_extraction_kernel(found_sources, object_params, object_maxima, object_count,
+                                         source_number, scale_number-1, scale_maxima, tolerance)
 
     return found_sources
+
+def source_extraction_rev(in1, tolerance):
+
+    objects = np.empty_like(in1, dtype=int)
+    object_count = np.empty([in1.shape[0],1], dtype=int)
+    scale_maxima = np.empty([in1.shape[0],1])
+
+    for i in range(in1.shape[0]):
+        scale_maxima[i] = np.max(in1[i,:,:])
+        objects[i,:,:], object_count[i] = ndimage.label(in1[i,:,:], structure=[[1,1,1],[1,1,1],[1,1,1]])
+
+    for i in range(-1,-in1.shape[0]-1,-1):
+        if i==(-1):
+            tmp = (in1[i,:,:]>(tolerance*scale_maxima[i]))*objects[i,:,:]
+        else:
+            tmp = (in1[i,:,:]>(tolerance*scale_maxima[i]))*objects[i,:,:]*objects[i+1,:,:]
+        labels = np.unique(tmp[tmp>0])
+        for j in labels:
+            objects[i,(objects[i,:,:]==j)] = -1
+        objects[i,(objects[i,:,:]>0)] = 0
+        objects[i,:,:] = -(objects[i,:,:])
+
+    return objects*in1
 
 if __name__=="__main__":
     img_hdu_list = pyfits.open("3C147.fits")
@@ -246,10 +260,15 @@ if __name__=="__main__":
     print time.time() - t
 
     t = time.time()
-    extraction = source_extraction(thresh_decom, np.max(thresh_decom), 0.5)
+    extraction1 = source_extraction_rev(thresh_decom, 0.1)
     print time.time() - t
 
-    # pb.imshow(decomposition[-2,:,:])
-    # pb.show()
-    # pb.imshow(thresh_decom[-2,:,:])
-    # pb.show()
+    # for i in range(extraction1.shape[0]):
+    #     pb.imshow(extraction1[i,:,:])
+    #     pb.show()
+
+    # t = time.time()
+    # extraction2, maxima = source_extraction(thresh_decom, np.max(thresh_decom), 0.1)
+    # print time.time() - t
+    #
+    # print np.allclose(extraction1,extraction2,1e-6)
