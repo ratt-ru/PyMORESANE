@@ -119,27 +119,8 @@ def gpu_source_extraction(in1, tolerance):
                         }
                        """)
 
-    ker3 = SourceModule("""
-                    __global__ void gpu_mask_kernel3(float *in1, float *in2)
-                    {
-                      const int i = (blockDim.x * blockIdx.x + threadIdx.x);
-                      const int j = (blockDim.y * blockIdx.y + threadIdx.y)*gridDim.y*blockDim.y;
-                      const int tid = i + j;
-
-                      if (in1[tid] <= in2[0])
-                        {
-                            in1[tid] = 0;
-                        }
-                      else
-                        {
-                            in1[tid] = 1;
-                        }
-                    }
-                   """)
-
     gpu_mask_kernel1 = ker1.get_function("gpu_mask_kernel1")
     gpu_mask_kernel2 = ker2.get_function("gpu_mask_kernel2")
-    gpu_mask_kernel3 = ker3.get_function("gpu_mask_kernel3")
 
     scale_maxima = np.empty([in1.shape[0],1])
     objects = np.empty_like(in1, dtype=int)
@@ -151,19 +132,16 @@ def gpu_source_extraction(in1, tolerance):
 
     for i in range(-1,-in1.shape[0]-1,-1):
 
-        gpu_objects = gpuarray.to_gpu_async(objects[i,:,:].astype(np.int32))
-        gpu_in1 = gpuarray.to_gpu_async(in1[i,:,:].astype(np.float32))
-        gpu_condition = gpuarray.to_gpu_async((tolerance*scale_maxima[i]).astype(np.float32))
+        condition = tolerance*scale_maxima[i]
 
         if i==(-1):
-            gpu_mask_kernel3(gpu_in1, gpu_condition, block=(32,32,1), grid=(in1.shape[1]//32, in1.shape[1]//32))
-            tmp = (gpu_in1*gpu_objects).get()
+            tmp = (in1[i,:,:]>condition)*objects[i,:,:]
         else:
-            gpu_mask_kernel3(gpu_in1, gpu_condition, block=(32,32,1), grid=(in1.shape[1]//32, in1.shape[1]//32))
-            tmp = (gpu_in1*gpu_objects*gpu_objects_old).get()
+            tmp = (in1[i,:,:]>condition)*objects[i,:,:]*objects[i+1,:,:]
 
-        labels = np.unique(tmp[tmp>0]).astype(np.int32)
-        print labels
+        labels = np.unique(tmp[tmp>0])
+
+        gpu_objects = gpuarray.to_gpu_async(objects[i,:,:].astype(np.int32))
 
         for j in labels:
             label = gpuarray.to_gpu_async(j)
@@ -171,7 +149,6 @@ def gpu_source_extraction(in1, tolerance):
 
         gpu_mask_kernel2(gpu_objects, block=(32,32,1), grid=(in1.shape[1]//32, in1.shape[1]//32))
 
-        gpu_objects_old = gpu_objects.copy()
         objects[i,:,:] = gpu_objects.get()
 
     return objects*in1
@@ -191,20 +168,15 @@ if __name__=="__main__":
 
     t = time.time()
     thresh_decom = threshold(decomposition, 5)
-    print time.time() - t
+    print "THRESHOLD TIME", time.time() - t
 
     t = time.time()
-    extraction1 = cpu_source_extraction(thresh_decom, 0.5)
-    print time.time() - t
+    extraction1 = cpu_source_extraction(thresh_decom, 0.9)
+    print "CPU TIME:", time.time() - t
 
     t = time.time()
-    extraction2 = gpu_source_extraction(thresh_decom, 0.5)
-    print time.time() - t
-
-    a = np.ones([3,4096,4096])
-    a = gpuarray.to_gpu_async(a)
+    extraction2 = gpu_source_extraction(thresh_decom, 0.9)
+    print "GPU TIME:", time.time() - t
 
     print np.where(extraction1!=extraction2)
-    # for i in range(extraction.shape[0]):
-    #     pb.imshow(extraction[i,:,:])
-    #     pb.show()
+
