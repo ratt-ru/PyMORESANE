@@ -117,9 +117,9 @@ def gpu_source_extraction(in1, tolerance):
         else:
             tmp = (in1[i,:,:]>(tolerance*scale_maxima[i]))*objects[i,:,:]*objects[i+1,:,:]
         labels = np.unique(tmp[tmp>0])
-        gpu_objects = gpuarray.to_gpu(objects[i,:,:].astype(np.int32))
+        gpu_objects = gpuarray.to_gpu_async(objects[i,:,:].astype(np.int32))
         for j in labels:
-            label = gpuarray.to_gpu(j)
+            label = gpuarray.to_gpu_async(j)
             gpu_source_extraction_kernel(gpu_objects, label, block=(32,32,1),
                                          grid=(in1.shape[1]//32, in1.shape[1]//32))
         objects[i,:,:] = gpu_objects.get()
