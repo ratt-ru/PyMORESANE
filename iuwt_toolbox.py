@@ -61,14 +61,37 @@ def snr_ratio(in1, in2):
     return out1
 
 def cpu_source_extraction(in1, tolerance):
+    """
+    The following function determines connectivity within a given wavelet decomposition. These connected and labelled
+    structures are thresholded to within some tolerance of the maximum coefficient at the scale. This determines
+    whether on not an object is to be considered as significant. Significant objects are extracted and factored into
+    a mask which is finally multiplied by the wavelet coefficients to return only wavelet coefficients belonging to
+    significant objects across all scales.
+
+    INPUTS:
+    in1         (no default):   Array containing the wavelet decomposition.
+    tolerance   (no default):   Percentage of maximum coefficient at which objects are deemed significant.
+
+    OUTPUTS:
+    objects*in1 (no default):   The wavelet coefficients of the significant structures.
+    """
+
+    # The following initialises some variables for storing the labelled image and the number of labels. The per scale
+    # maxima are also initialised here.
 
     scale_maxima = np.empty([in1.shape[0],1])
+
     objects = np.empty_like(in1, dtype=int)
     object_count = np.empty([in1.shape[0],1], dtype=int)
+
+    # The following loop uses functionality from the ndimage module to assess connectivity. The maxima are also
+    # calculated here.
 
     for i in range(in1.shape[0]):
         scale_maxima[i] = np.max(in1[i,:,:])
         objects[i,:,:], object_count[i] = ndimage.label(in1[i,:,:], structure=[[1,1,1],[1,1,1],[1,1,1]])
+
+    # The following removes the insignificant objects and then extracts the remaining ones.
 
     for i in range(-1,-in1.shape[0]-1,-1):
         if i==(-1):
@@ -86,6 +109,23 @@ def cpu_source_extraction(in1, tolerance):
     return objects*in1
 
 def gpu_source_extraction(in1, tolerance):
+    """
+    The following function determines connectivity within a given wavelet decomposition. These connected and labelled
+    structures are thresholded to within some tolerance of the maximum coefficient at the scale. This determines
+    whether on not an object is to be considered as significant. Significant objects are extracted and factored into
+    a mask which is finally multiplied by the wavelet coefficients to return only wavelet coefficients belonging to
+    significant objects across all scales. This GPU accelerated version speeds up the extraction process.
+
+    INPUTS:
+    in1         (no default):   Array containing the wavelet decomposition.
+    tolerance   (no default):   Percentage of maximum coefficient at which objects are deemed significant.
+
+    OUTPUTS:
+    objects*in1 (no default):   The wavelet coefficients of the significant structures.
+    """
+
+    # The following are pycuda kernels which are executed on the gpu. Specifically, these both perform thresholding
+    # operations. The gpu is much faster at this on large arrays due to their massive parallel processing power.
 
     ker1 = SourceModule("""
                         __global__ void gpu_mask_kernel1(int *in1, int *in2)
@@ -119,16 +159,26 @@ def gpu_source_extraction(in1, tolerance):
                         }
                        """)
 
+    # The following bind the pycuda kernels to the expressions on the left.
+
     gpu_mask_kernel1 = ker1.get_function("gpu_mask_kernel1")
     gpu_mask_kernel2 = ker2.get_function("gpu_mask_kernel2")
+
+    # The following initialises some variables for storing the labelled image and the number of labels. The per scale
+    # maxima are also initialised here.
 
     scale_maxima = np.empty([in1.shape[0],1])
     objects = np.empty_like(in1, dtype=int)
     object_count = np.empty([in1.shape[0],1], dtype=int)
 
+    # The following loop uses functionality from the ndimage module to assess connectivity. The maxima are also
+    # calculated here.
+
     for i in range(in1.shape[0]):
         scale_maxima[i] = np.max(in1[i,:,:])
         objects[i,:,:], object_count[i] = ndimage.label(in1[i,:,:], structure=[[1,1,1],[1,1,1],[1,1,1]])
+
+    # The following removes the insignificant objects and then extracts the remaining ones.
 
     for i in range(-1,-in1.shape[0]-1,-1):
 
