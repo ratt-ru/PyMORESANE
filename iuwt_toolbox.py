@@ -60,6 +60,24 @@ def snr_ratio(in1, in2):
 
     return out1
 
+def source_extraction(in1, tolerance, mode="cpu"):
+    """
+    Convenience function for allocating work to cpu or gpu, depending on the selected mode.
+
+    INPUTS:
+    in1         (no default):   Array containing the wavelet decomposition.
+    tolerance   (no default):   Percentage of maximum coefficient at which objects are deemed significant.
+    mode        (default="cpu"):Mode of operation - either gpu or cpu.
+
+    OUTPUTS:
+    Array containing the significant wavelet coefficients of extracted sources.
+    """
+
+    if mode=="cpu":
+        return cpu_source_extraction(in1, tolerance)
+    elif mode=="gpu":
+        return gpu_source_extraction(in1, tolerance)
+
 def cpu_source_extraction(in1, tolerance):
     """
     The following function determines connectivity within a given wavelet decomposition. These connected and labelled
@@ -221,11 +239,11 @@ if __name__=="__main__":
     print "THRESHOLD TIME", time.time() - t
 
     t = time.time()
-    extraction1 = cpu_source_extraction(thresh_decom, 0.9)
+    extraction1 = source_extraction(thresh_decom, 0.9)
     print "CPU TIME:", time.time() - t
 
     t = time.time()
-    extraction2 = gpu_source_extraction(thresh_decom, 0.9)
+    extraction2 = source_extraction(thresh_decom, 0.9, mode="gpu")
     print "GPU TIME:", time.time() - t
 
     print np.where(extraction1!=extraction2)
