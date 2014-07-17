@@ -92,6 +92,7 @@ def cpu_source_extraction(in1, tolerance):
 
     OUTPUTS:
     objects*in1 (no default):   The wavelet coefficients of the significant structures.
+    objects     (no default):   The mask of the significant structures.
     """
 
     # The following initialises some variables for storing the labelled image and the number of labels. The per scale
@@ -140,6 +141,7 @@ def gpu_source_extraction(in1, tolerance):
 
     OUTPUTS:
     objects*in1 (no default):   The wavelet coefficients of the significant structures.
+    objects     (no default):   The mask of the significant structures.
     """
 
     # The following are pycuda kernels which are executed on the gpu. Specifically, these both perform thresholding
@@ -219,7 +221,7 @@ def gpu_source_extraction(in1, tolerance):
 
         objects[i,:,:] = gpu_objects.get()
 
-    return objects*in1
+    return objects*in1, objects
 
 if __name__=="__main__":
     img_hdu_list = pyfits.open("3C147.fits")
