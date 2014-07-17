@@ -36,7 +36,7 @@ class FitsImage:
 
     def moresane(self, subregion=None, scale_count=None, sigma_level=4, loop_gain=0.1, tolerance=0.7, accuracy=1e-6,
                  major_loop_miter=100, decon_max_iter=30, decom_mode="ser", core_count=1, conv_device='cpu',
-                 conv_mode='linear'):
+                 conv_mode='linear', extraction_mode='cpu'):
         """
         Primary method for wavelet analysis and subsequent deconvolution.
 
@@ -55,10 +55,11 @@ class FitsImage:
                                                 condition.
         decon_max_iter      (default=30):       Maximum number of iterations allowed in the minor loop. Serves as an
                                                 exit condition when the SNR is does not reach a maximum.
-        decom_mode          (default='ser')     Specifier for decomposition mode - serial, multiprocessing, or gpu.
-        core_count          (default=1)         In the event that multiprocessing, specifies the number of cores.
+        decom_mode          (default='ser'):    Specifier for decomposition mode - serial, multiprocessing, or gpu.
+        core_count          (default=1):        In the event that multiprocessing, specifies the number of cores.
         conv_device         (default='cpu'):    Specifier for device to be used - cpu or gpu.
         conv_mode           (default='linear'): Specifier for convolution mode - linear or circular.
+        extraction_mode     (default='cpu'):    Specifier for mode to be used - cpu or gpu.
 
         """
 
@@ -163,27 +164,63 @@ class FitsImage:
                 dirty_decomposition = iuwt.iuwt_decomposition(dirty_subregion, scale_count, mode=decom_mode, core_count=core_count)
                 dirty_decomposition_thresh = tools.threshold(dirty_decomposition, sigma_level=sigma_level)
 
+                # The following calculates and stores the normalised maximum at each scale.
+
                 normalised_scale_maxima = np.empty_like(psf_energies)
 
                 for i in range(dirty_decomposition_thresh.shape[0]):
                     normalised_scale_maxima[i] = np.max(dirty_decomposition_thresh[i,:,:])/psf_energies[i]
 
-                max_scale = np.argmax(normalised_scale_maxima) + 1
-                max_coeff = normalised_scale_maxima[max_scale-1,0,0]
+                # The following stores the index, scale and value of the global maximum coefficient.
+
+                max_index = np.argmax(normalised_scale_maxima)
+                max_scale = max_index + 1
+                max_coeff = normalised_scale_maxima[max_index,0,0]
 
                 print "Maximum scale: ", max_scale
                 print "Maximum coefficient: ", max_coeff
 
-                for i in range(normalised_scale_maxima.shape[0]):
-                    pass
+                # The following constitutes a major change to the original implementation - the aim is to establish
+                # as soon as possible which scales are to be omitted on the current iteration. This attempts to find
+                # a local maxima or empty scales below the maximum scale. If either is found, that scale all those
+                # below it are ignored.
 
-                # NOTE: As Python indexes from zero, yet scales are more accurately indexed from one, maxscale will
-                # always be one more than the actual array dimension intended.
+                scale_adjust = 0
 
-                # The following finds the location and value of the maximum wavelet coefficient ignoring the first
-                # scale.
+                for i in range(max_index-1,-1,-1):
+                    if max_index > 1:
+                        if (normalised_scale_maxima[i,0,0] > normalised_scale_maxima[i+1,0,0]):
+                            scale_adjust = i + 1
+                            print "Scale {} contains a local maxima. Ignoring scales <= {}".format(scale_adjust, scale_adjust)
+                            break
+                    if (normalised_scale_maxima[i,0,0] == 0):
+                        scale_adjust = i + 1
+                        print "Scale {} is empty. Ignoring scales <= {}".format(scale_adjust, scale_adjust)
+                        break
 
-                # NORMALISE HERE BEFORE FINDING MAXIMUM.
+                # This is an escape condition for the loop. If the maximum coefficient is zero, then there is no
+                # useful information left in the wavelets and MORESANE is complete.
+
+                if max_coeff == 0:
+                    print "No significant wavelet coefficients detected."
+                    break
+                    # stop_flag = 1
+                    # continue
+
+                # We choose to only consider scales up to the scale containing the maximum wavelet coefficient,
+                # and ignore scales at or below the scale adjustment.
+
+                dirty_decomposition_thresh = dirty_decomposition_thresh[scale_adjust:max_scale,:,:]
+
+                # The following is a call to the externally defined source extraction function. It returns an array
+                # populated with the wavelet coefficients of structures of interest in the image. This basically refers
+                # to objects containing a maximum wavelet coefficient within some user-specified tolerance of the
+                # maximum  at that scale.
+
+                extracted_sources, extracted_sources_mask = \
+                    tools.source_extraction(dirty_decomposition_thresh, tolerance, mode=extraction_mode)
+
+                # TODO: Recomposition etc.
 
                 break
             break
@@ -204,6 +241,6 @@ if __name__ == "__main__":
     test = FitsImage("3C147.fits","3C147_PSF.fits")
 
     start_time = time.time()
-    test.moresane(scale_count=4, conv_mode="linear")
+    test.moresane(scale_count=4, tolerance=0.5, conv_mode="linear")
     end_time = time.time()
     print("Elapsed time was %g seconds" % (end_time - start_time))

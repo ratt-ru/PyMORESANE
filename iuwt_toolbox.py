@@ -124,7 +124,7 @@ def cpu_source_extraction(in1, tolerance):
         objects[i,(objects[i,:,:]>0)] = 0
         objects[i,:,:] = -(objects[i,:,:])
 
-    return objects*in1
+    return objects*in1, objects
 
 def gpu_source_extraction(in1, tolerance):
     """
