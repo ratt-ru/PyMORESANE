@@ -122,10 +122,10 @@ def ser_iuwt_recomposition(in1, scale_adjust):
 
     if len(in1.shape)>2:
         scale_count = in1.shape[0]
-        recomposition = np.zeros([in1.shape[1], in1.shape[2]])
+        recomposition = np.zeros([1, in1.shape[1], in1.shape[2]])
     else:
         scale_count = 1
-        recomposition = np.zeros([in1.shape[0], in1.shape[1]])
+        recomposition = np.zeros([1, in1.shape[0], in1.shape[1]])
 
     # Maxscale is adjusted by the value of scaleadjust to give its true value.
 
@@ -256,10 +256,10 @@ def mp_iuwt_recomposition(in1, scale_adjust, core_count):
 
     if len(in1.shape)>2:
         scale_count = in1.shape[0]
-        recomposition = np.zeros([in1.shape[1], in1.shape[2]])
+        recomposition = np.zeros([1, in1.shape[1], in1.shape[2]])
     else:
         scale_count = 1
-        recomposition = np.zeros([in1.shape[0], in1.shape[1]])
+        recomposition = np.zeros([1, in1.shape[0], in1.shape[1]])
 
     # Maxscale is adjusted by the value of scaleadjust to give its true value.
 
@@ -468,7 +468,7 @@ def gpu_iuwt_recomposition(in1, scale_adjust):
         for i in range(scale_adjust-1, -1, -1):
             recomposition = gpu_a_trous(recomposition, wavelet_filter, i)
 
-    return recomposition.get()
+    return recomposition.get().reshape([1,in1.shape[1],in1.shape[2]])
 
 def gpu_a_trous(in1, wavelet_filter, scale):
     """

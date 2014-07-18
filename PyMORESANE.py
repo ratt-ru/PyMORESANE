@@ -220,7 +220,11 @@ class FitsImage:
                 extracted_sources, extracted_sources_mask = \
                     tools.source_extraction(dirty_decomposition_thresh, tolerance, mode=extraction_mode)
 
-                # TODO: Recomposition etc.
+                # The wavelet coefficients of the extracted sources are recomposed into a single image,
+                # which should contain only the structures of interest.
+
+                recomposed_sources = \
+                    iuwt.iuwt_recomposition(extracted_sources, scale_adjust, mode=decom_mode, core_count=core_count)
 
                 break
             break
