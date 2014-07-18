@@ -9,7 +9,7 @@ try:
 except:
     print "Pycuda unavailable - GPU mode will fail."
 
-def fft_convolve(in1, in2, use_gpu=False, conv_mode="linear"):
+def fft_convolve(in1, in2, conv_device='cpu', conv_mode="linear"):
     """
     This function determines the convolution of two inputs using the FFT. Contains an implementation for both CPU
     and GPU.
@@ -17,7 +17,7 @@ def fft_convolve(in1, in2, use_gpu=False, conv_mode="linear"):
     INPUTS:
     in1         (no default):           Array containing one set of data, possibly an image.
     in2         (no default):           Gpuarray containing the FFT of the PSF.
-    use_gpu     (default = True):       Boolean parameter which allows specification of GPU use.
+    conv_device (default = 'cpu'):       Parameter which allows specification of CPU or GPU use.
     conv_mode   (default = "linear")    Mode specifier for the convolution.
     """
 
@@ -25,7 +25,7 @@ def fft_convolve(in1, in2, use_gpu=False, conv_mode="linear"):
     # convolution pads the input with zeros to avoid this problem but is consequently heavier on computation and
     # memory.
 
-    if use_gpu:
+    if conv_device=='gpu':
 
         if conv_mode=="linear":
             fft_in1 = pad_array(in1)

@@ -35,7 +35,7 @@ class FitsImage:
         self.psf_data_shape = self.psf_data.shape
 
     def moresane(self, subregion=None, scale_count=None, sigma_level=4, loop_gain=0.1, tolerance=0.7, accuracy=1e-6,
-                 major_loop_miter=100, decon_max_iter=30, decom_mode="ser", core_count=1, conv_device='cpu',
+                 major_loop_miter=100, minor_loop_miter=30, decom_mode="ser", core_count=1, conv_device='cpu',
                  conv_mode='linear', extraction_mode='cpu'):
         """
         Primary method for wavelet analysis and subsequent deconvolution.
@@ -53,7 +53,7 @@ class FitsImage:
                                                 loop when this threshold is reached.
         major_loop_miter    (default=100):      Maximum number of iterations allowed in the major loop. Exit
                                                 condition.
-        decon_max_iter      (default=30):       Maximum number of iterations allowed in the minor loop. Serves as an
+        minor_loop_miter    (default=30):       Maximum number of iterations allowed in the minor loop. Serves as an
                                                 exit condition when the SNR is does not reach a maximum.
         decom_mode          (default='ser'):    Specifier for decomposition mode - serial, multiprocessing, or gpu.
         core_count          (default=1):        In the event that multiprocessing, specifies the number of cores.
@@ -161,7 +161,7 @@ class FitsImage:
                 # This is the IUWT decomposition of the dirty image subregion up to scale_count, followed by a
                 # thresholding of the resulting wavelet coefficients based on the MAD estimator.
 
-                dirty_decomposition = iuwt.iuwt_decomposition(dirty_subregion, scale_count, mode=decom_mode, core_count=core_count)
+                dirty_decomposition = iuwt.iuwt_decomposition(dirty_subregion, scale_count, 0, decom_mode, core_count)
                 dirty_decomposition_thresh = tools.threshold(dirty_decomposition, sigma_level=sigma_level)
 
                 # The following calculates and stores the normalised maximum at each scale.
@@ -224,7 +224,30 @@ class FitsImage:
                 # which should contain only the structures of interest.
 
                 recomposed_sources = \
-                    iuwt.iuwt_recomposition(extracted_sources, scale_adjust, mode=decom_mode, core_count=core_count)
+                    iuwt.iuwt_recomposition(extracted_sources, scale_adjust, decom_mode, core_count)
+
+######################################################MINOR LOOP######################################################
+
+                r = recomposed_sources.copy()
+                p = recomposed_sources.copy()
+                minor_loop_niter = 0
+
+                while (minor_loop_niter<minor_loop_miter):
+
+                    alpha_denominator = conv.fft_convolve(p, psf_data_fft, conv_device, conv_mode)
+                    alpha_denominator = iuwt.iuwt_decomposition(alpha_denominator, scale_count, scale_adjust,
+                                                                decom_mode, core_count)
+                    alpha_denominator = extracted_sources_mask*alpha_denominator
+                    alpha_denominator = iuwt.iuwt_recomposition(alpha_denominator, scale_adjust, decom_mode, core_count)
+                    alpha_denominator = np.dot(p.reshape(1,-1),alpha_denominator.reshape(-1,1))[0,0]
+
+                    alpha_numerator = np.dot(r.reshape(1,-1),r.reshape(-1,1))[0,0]
+
+                    alpha = alpha_numerator/alpha_denominator
+
+                    print alpha
+
+                    break
 
                 break
             break
@@ -245,6 +268,6 @@ if __name__ == "__main__":
     test = FitsImage("3C147.fits","3C147_PSF.fits")
 
     start_time = time.time()
-    test.moresane(scale_count=4, tolerance=0.5, conv_mode="linear")
+    test.moresane(scale_count=1, tolerance=0.5, conv_mode="linear")
     end_time = time.time()
     print("Elapsed time was %g seconds" % (end_time - start_time))

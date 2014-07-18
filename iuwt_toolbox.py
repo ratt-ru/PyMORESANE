@@ -44,22 +44,6 @@ def threshold(in1, sigma_level=4):
 
     return out1
 
-def snr_ratio(in1, in2):
-    """
-    The following function simply calculates the signal to noise ratio between two signals.
-
-    INPUTS:
-    in1         (no default):   Array containing values for signal 1.
-    in2         (no default):   Array containing values for signal 2.
-
-    OUTPUTS:
-    out1        (no default):   The ratio of the signal to noise ratios of two signals.
-    """
-
-    out1 = 20*np.log10(np.linalg.norm(in1)/np.linalg.norm(in1-in2))
-
-    return out1
-
 def source_extraction(in1, tolerance, mode="cpu"):
     """
     Convenience function for allocating work to cpu or gpu, depending on the selected mode.
@@ -223,6 +207,38 @@ def gpu_source_extraction(in1, tolerance):
 
     return objects*in1, objects
 
+def snr_ratio(in1, in2):
+    """
+    The following function simply calculates the signal to noise ratio between two signals.
+
+    INPUTS:
+    in1         (no default):   Array containing values for signal 1.
+    in2         (no default):   Array containing values for signal 2.
+
+    OUTPUTS:
+    out1        (no default):   The ratio of the signal to noise ratios of two signals.
+    """
+
+    out1 = 20*np.log10(np.linalg.norm(in1)/np.linalg.norm(in1-in2))
+
+    return out1
+
+def conjugate_gradient_descent(in1, max_iter):
+    """
+    STUFF
+    """
+
+    r = in1.copy()
+    p = in1.copy()
+    iter = 0
+
+    while (iter<max_iter):
+        alpha_numerator = (np.dot(r.reshape(1,-1),r.reshape(-1,1))[0,0])
+        alpha_denominator = p.reshape[1,-1]
+        break
+
+
+
 if __name__=="__main__":
     img_hdu_list = pyfits.open("3C147.fits")
     psf_hdu_list = pyfits.open("3C147_PSF.fits")
@@ -233,20 +249,23 @@ if __name__=="__main__":
     img_hdu_list.close()
     psf_hdu_list.close()
 
-    decomposition = iuwt.iuwt_decomposition(dirty_data,3)
-    print decomposition.shape
+    conjugate_gradient_descent(dirty_data,1)
+    # np.array([[1],[2],[3]])
 
-    t = time.time()
-    thresh_decom = threshold(decomposition, 5)
-    print "THRESHOLD TIME", time.time() - t
-
-    t = time.time()
-    extraction1 = source_extraction(thresh_decom, 0.9)
-    print "CPU TIME:", time.time() - t
-
-    t = time.time()
-    extraction2 = source_extraction(thresh_decom, 0.9, mode="gpu")
-    print "GPU TIME:", time.time() - t
-
-    print np.where(extraction1!=extraction2)
+    # decomposition = iuwt.iuwt_decomposition(dirty_data,3)
+    # print decomposition.shape
+    #
+    # t = time.time()
+    # thresh_decom = threshold(decomposition, 5)
+    # print "THRESHOLD TIME", time.time() - t
+    #
+    # t = time.time()
+    # extraction1 = source_extraction(thresh_decom, 0.9)
+    # print "CPU TIME:", time.time() - t
+    #
+    # t = time.time()
+    # extraction2 = source_extraction(thresh_decom, 0.9, mode="gpu")
+    # print "GPU TIME:", time.time() - t
+    #
+    # print np.where(extraction1!=extraction2)
 
