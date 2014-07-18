@@ -228,26 +228,59 @@ class FitsImage:
 
 ######################################################MINOR LOOP######################################################
 
+                x = np.zeros_like(recomposed_sources)
                 r = recomposed_sources.copy()
                 p = recomposed_sources.copy()
                 minor_loop_niter = 0
 
+                # The following is the minor loop of the algorithm. In particular, we make use of the conjugate
+                # gradient descent method to optimise our model. The variables have been named in order to appear
+                # consistent with the algorithm.
+
                 while (minor_loop_niter<minor_loop_miter):
 
-                    alpha_denominator = conv.fft_convolve(p, psf_data_fft, conv_device, conv_mode)
-                    alpha_denominator = iuwt.iuwt_decomposition(alpha_denominator, scale_count, scale_adjust,
-                                                                decom_mode, core_count)
-                    alpha_denominator = extracted_sources_mask*alpha_denominator
-                    alpha_denominator = iuwt.iuwt_recomposition(alpha_denominator, scale_adjust, decom_mode, core_count)
-                    alpha_denominator = np.dot(p.reshape(1,-1),alpha_denominator.reshape(-1,1))[0,0]
+                    Ap = conv.fft_convolve(p, psf_data_fft, conv_device, conv_mode)
+                    Ap = iuwt.iuwt_decomposition(Ap, scale_count, scale_adjust, decom_mode, core_count)
+                    Ap = extracted_sources_mask*Ap
+                    Ap = iuwt.iuwt_recomposition(Ap, scale_adjust, decom_mode, core_count)
 
+                    alpha_denominator = np.dot(p.reshape(1,-1),Ap.reshape(-1,1))[0,0]
                     alpha_numerator = np.dot(r.reshape(1,-1),r.reshape(-1,1))[0,0]
-
                     alpha = alpha_numerator/alpha_denominator
 
-                    print alpha
+                    xn = x + alpha*p
 
-                    break
+                    print "Minimum value:", np.min(xn)
+
+                    if np.min(xn)<0:
+
+                        print "Model contains negative values - enforcing positivity."
+
+                        xn[xn<0] = 0
+                        p = (xn-x)/alpha
+
+                        Ap = conv.fft_convolve(p, psf_data_fft, conv_device, conv_mode)
+                        Ap = iuwt.iuwt_decomposition(Ap, scale_count, scale_adjust, decom_mode, core_count)
+                        Ap = extracted_sources_mask*Ap
+                        Ap = iuwt.iuwt_recomposition(Ap, scale_adjust, decom_mode, core_count)
+
+                    rn = r - alpha*Ap
+
+                    beta_numerator = np.dot(rn.reshape(1,-1), rn.reshape(-1,1))[0,0]
+                    beta_denominator = np.dot(r.reshape(1,-1), r.reshape(-1,1))[0,0]
+                    beta = beta_numerator/beta_denominator
+
+                    p = rn + beta*p
+
+                    r = rn
+                    x = xn
+
+                    minor_loop_niter += 1
+
+                    print "{} minor loop iterations performed.".format(minor_loop_niter)
+
+                pb.imshow(x)
+                pb.show()
 
                 break
             break
@@ -268,6 +301,6 @@ if __name__ == "__main__":
     test = FitsImage("3C147.fits","3C147_PSF.fits")
 
     start_time = time.time()
-    test.moresane(scale_count=1, tolerance=0.5, conv_mode="linear")
+    test.moresane(minor_loop_miter=5, scale_count=4, tolerance=0.5, conv_mode="linear")
     end_time = time.time()
     print("Elapsed time was %g seconds" % (end_time - start_time))
