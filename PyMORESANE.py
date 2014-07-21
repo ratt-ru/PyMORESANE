@@ -77,12 +77,11 @@ class FitsImage:
         # The following creates arrays with dimensions equal to subregion and containing the values of the dirty
         # image and psf in their central subregions. TODO: Allow specification of deconvolution center.
 
-        dirty_subregion = self.dirty_data[
-                              (self.dirty_data_shape[0]/2-subregion/2):(self.dirty_data_shape[0]/2+subregion/2),
-                              (self.dirty_data_shape[1]/2-subregion/2):(self.dirty_data_shape[1]/2+subregion/2)]
-        psf_subregion = self.psf_data[
-                              (self.psf_data_shape[0]/2-subregion/2):(self.psf_data_shape[0]/2+subregion/2),
-                              (self.psf_data_shape[1]/2-subregion/2):(self.psf_data_shape[1]/2+subregion/2)]
+        subregion_slice = tuple([slice(self.dirty_data_shape[0]/2-subregion/2, self.dirty_data_shape[0]/2+subregion/2),
+                                 slice(self.dirty_data_shape[1]/2-subregion/2, self.dirty_data_shape[1]/2+subregion/2)])
+
+        dirty_subregion = self.dirty_data[subregion_slice]
+        psf_subregion = self.psf_data[subregion_slice]
 
         # The following pre-loads the gpu with the fft of both the full PSF and the subregion of interest. If usegpu
         # is false, this simply precomputes the fft of the PSF.
@@ -146,6 +145,8 @@ class FitsImage:
         max_coeff = 1
         residual_std = 1
 
+        model = np.zeros_like(self.dirty_data)
+
         # The following is the major loop. Its exit conditions are reached if if the number of major loop iterations
         # exceeds a user defined value, the maximum wavelet coefficient is zero or the standard deviation of the
         # residual drops below a user specified accuracy threshold.
@@ -173,7 +174,7 @@ class FitsImage:
 
                 # The following stores the index, scale and value of the global maximum coefficient.
 
-                max_index = np.argmax(normalised_scale_maxima)
+                max_index = np.argmax(normalised_scale_maxima[min_scale:,:,:]) + min_scale
                 max_scale = max_index + 1
                 max_coeff = normalised_scale_maxima[max_index,0,0]
 
@@ -197,6 +198,8 @@ class FitsImage:
                         scale_adjust = i + 1
                         print "Scale {} is empty. Ignoring scales <= {}".format(scale_adjust, scale_adjust)
                         break
+
+                scale_adjust = max(min_scale, scale_adjust)
 
                 # This is an escape condition for the loop. If the maximum coefficient is zero, then there is no
                 # useful information left in the wavelets and MORESANE is complete.
@@ -244,7 +247,7 @@ class FitsImage:
                 while (minor_loop_niter<minor_loop_miter):
 
                     Ap = conv.fft_convolve(p, psf_subregion_fft, conv_device, conv_mode)
-                    Ap = iuwt.iuwt_decomposition(Ap, scale_count, scale_adjust, decom_mode, core_count)
+                    Ap = iuwt.iuwt_decomposition(Ap, max_scale, scale_adjust, decom_mode, core_count)
                     Ap = extracted_sources_mask*Ap
                     Ap = iuwt.iuwt_recomposition(Ap, scale_adjust, decom_mode, core_count)
 
@@ -254,15 +257,15 @@ class FitsImage:
 
                     xn = x + alpha*p
 
-                    if np.min(xn)<0:
+                    # The following enforces the positivity constraint which necessitates some recalculation.
 
-                        print "Model contains negative values - enforcing positivity."
+                    if np.min(xn)<0:
 
                         xn[xn<0] = 0
                         p = (xn-x)/alpha
 
                         Ap = conv.fft_convolve(p, psf_subregion_fft, conv_device, conv_mode)
-                        Ap = iuwt.iuwt_decomposition(Ap, scale_count, scale_adjust, decom_mode, core_count)
+                        Ap = iuwt.iuwt_decomposition(Ap, max_scale, scale_adjust, decom_mode, core_count)
                         Ap = extracted_sources_mask*Ap
                         Ap = iuwt.iuwt_recomposition(Ap, scale_adjust, decom_mode, core_count)
 
@@ -274,48 +277,75 @@ class FitsImage:
 
                     p = rn + beta*p
 
-                    r = rn
-                    x = xn
+                    model_sources = conv.fft_convolve(xn, psf_subregion_fft, conv_device, conv_mode)
+                    model_sources = iuwt.iuwt_decomposition(model_sources, max_scale, scale_adjust, decom_mode, core_count)
+                    model_sources = extracted_sources_mask*model_sources
+
+                    snr_last = snr_current
+                    snr_current = tools.snr_ratio(extracted_sources, model_sources)
 
                     minor_loop_niter += 1
 
-                    model = conv.fft_convolve(xn, psf_subregion_fft, conv_device, conv_mode)
-                    model = iuwt.iuwt_decomposition(model, scale_count, scale_adjust, decom_mode, core_count)
-                    model = extracted_sources_mask*model
-
-                    snr_last = snr_current
-                    snr_current = tools.snr_ratio(extracted_sources, model)
-
-                    # print "SNR at iteration {0} = {1}".format(minor_loop_niter, snr_current)
+                    print "SNR at iteration {0} = {1}".format(minor_loop_niter, snr_current)
 
                     if snr_current>40:
                         print "Model has reached <1% error - exiting minor loop."
+                        x = xn
                         min_scale = 0
                         break
 
                     if (minor_loop_niter==1)&(snr_current>40):
-                        print "SNR too large - false detection. Retrying..."
+                        print "SNR too large - false detection. Incrementing the minimum scale."
                         min_scale += 1
+                        break
 
                     if (minor_loop_niter>1)&(snr_current<snr_last):
                         print "SNR has decreased - checking case."
                         if (snr_current>10.5):
-                            print "Model has reached <30% error - exiting minor loop."
+                            print "Model has reached ~{}% error - exiting minor loop."\
+                                    .format(int(100/np.power(10,snr_current/20)))
                             min_scale = 0
+                            break
                         else:
-                            print "SNR too small. Retrying..."
+                            print "SNR too small. Incrementing Incrementing the minimum scale."
                             min_scale += 1
+                            break
+
+                    r = rn
+                    x = xn
 
                 print "{} minor loop iterations performed.".format(minor_loop_niter)
 
-                break
-            break
+                if min_scale==0:
+                    break
+
+###################################################END OF MINOR LOOP###################################################
+
+            if max_coeff>0:
+
+                model[subregion_slice] += loop_gain*x
+
+                residual = self.dirty_data - conv.fft_convolve(model, psf_data_fft, conv_device, conv_mode)
+
+                dirty_subregion = residual[subregion_slice]
+
+                major_loop_niter += 1
+                print "{} major loop iterations performed.".format(major_loop_niter)
+
+            # break
 
 if __name__ == "__main__":
-    # test = FitsImage("3C147.fits","3C147_PSF.fits")
-    test = FitsImage("DIRTY.fits","PSF.fits")
+    test = FitsImage("3C147.fits","3C147_PSF.fits")
+    # test = FitsImage("DIRTY.fits","PSF.fits")
 
     start_time = time.time()
-    test.moresane(subregion=512, minor_loop_miter=25, scale_count=3, tolerance=0.5, conv_mode="circular")
+    test.moresane(subregion=512, minor_loop_miter=25, scale_count=5, tolerance=0.5, conv_mode="circular")
     end_time = time.time()
     print("Elapsed time was %g seconds" % (end_time - start_time))
+
+                # pb.figure()
+                # pb.subplot(121)
+                # pb.imshow(recomposed_sources)
+                # pb.subplot(122)
+                # pb.imshow(iuwt.iuwt_recomposition(model_sources, scale_adjust, decom_mode, core_count))
+                # pb.show()
