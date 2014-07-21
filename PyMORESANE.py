@@ -231,7 +231,11 @@ class FitsImage:
                 x = np.zeros_like(recomposed_sources)
                 r = recomposed_sources.copy()
                 p = recomposed_sources.copy()
+
                 minor_loop_niter = 0
+
+                snr_last = 0
+                snr_current = 0
 
                 # The following is the minor loop of the algorithm. In particular, we make use of the conjugate
                 # gradient descent method to optimise our model. The variables have been named in order to appear
@@ -239,7 +243,7 @@ class FitsImage:
 
                 while (minor_loop_niter<minor_loop_miter):
 
-                    Ap = conv.fft_convolve(p, psf_data_fft, conv_device, conv_mode)
+                    Ap = conv.fft_convolve(p, psf_subregion_fft, conv_device, conv_mode)
                     Ap = iuwt.iuwt_decomposition(Ap, scale_count, scale_adjust, decom_mode, core_count)
                     Ap = extracted_sources_mask*Ap
                     Ap = iuwt.iuwt_recomposition(Ap, scale_adjust, decom_mode, core_count)
@@ -250,8 +254,6 @@ class FitsImage:
 
                     xn = x + alpha*p
 
-                    print "Minimum value:", np.min(xn)
-
                     if np.min(xn)<0:
 
                         print "Model contains negative values - enforcing positivity."
@@ -259,7 +261,7 @@ class FitsImage:
                         xn[xn<0] = 0
                         p = (xn-x)/alpha
 
-                        Ap = conv.fft_convolve(p, psf_data_fft, conv_device, conv_mode)
+                        Ap = conv.fft_convolve(p, psf_subregion_fft, conv_device, conv_mode)
                         Ap = iuwt.iuwt_decomposition(Ap, scale_count, scale_adjust, decom_mode, core_count)
                         Ap = extracted_sources_mask*Ap
                         Ap = iuwt.iuwt_recomposition(Ap, scale_adjust, decom_mode, core_count)
@@ -277,30 +279,43 @@ class FitsImage:
 
                     minor_loop_niter += 1
 
-                    print "{} minor loop iterations performed.".format(minor_loop_niter)
+                    model = conv.fft_convolve(xn, psf_subregion_fft, conv_device, conv_mode)
+                    model = iuwt.iuwt_decomposition(model, scale_count, scale_adjust, decom_mode, core_count)
+                    model = extracted_sources_mask*model
 
-                pb.imshow(x)
-                pb.show()
+                    snr_last = snr_current
+                    snr_current = tools.snr_ratio(extracted_sources, model)
+
+                    # print "SNR at iteration {0} = {1}".format(minor_loop_niter, snr_current)
+
+                    if snr_current>40:
+                        print "Model has reached <1% error - exiting minor loop."
+                        min_scale = 0
+                        break
+
+                    if (minor_loop_niter==1)&(snr_current>40):
+                        print "SNR too large - false detection. Retrying..."
+                        min_scale += 1
+
+                    if (minor_loop_niter>1)&(snr_current<snr_last):
+                        print "SNR has decreased - checking case."
+                        if (snr_current>10.5):
+                            print "Model has reached <30% error - exiting minor loop."
+                            min_scale = 0
+                        else:
+                            print "SNR too small. Retrying..."
+                            min_scale += 1
+
+                print "{} minor loop iterations performed.".format(minor_loop_niter)
 
                 break
             break
 
-
-
-
-
-
-
-
-
-
-
-
-
 if __name__ == "__main__":
-    test = FitsImage("3C147.fits","3C147_PSF.fits")
+    # test = FitsImage("3C147.fits","3C147_PSF.fits")
+    test = FitsImage("DIRTY.fits","PSF.fits")
 
     start_time = time.time()
-    test.moresane(minor_loop_miter=5, scale_count=4, tolerance=0.5, conv_mode="linear")
+    test.moresane(subregion=512, minor_loop_miter=25, scale_count=3, tolerance=0.5, conv_mode="circular")
     end_time = time.time()
     print("Elapsed time was %g seconds" % (end_time - start_time))
