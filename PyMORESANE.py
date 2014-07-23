@@ -34,6 +34,10 @@ class FitsImage:
         self.dirty_data_shape = self.dirty_data.shape
         self.psf_data_shape = self.psf_data.shape
 
+        self.complete = False
+        self.model = np.zeros_like(self.dirty_data)
+        self.residual = np.zeros_like(self.dirty_data)
+
     def moresane(self, subregion=None, scale_count=None, sigma_level=4, loop_gain=0.1, tolerance=0.7, accuracy=1e-6,
                  major_loop_miter=100, minor_loop_miter=30, decom_mode="ser", core_count=1, conv_device='cpu',
                  conv_mode='linear', extraction_mode='cpu', enforce_positivity=False):
@@ -153,14 +157,18 @@ class FitsImage:
         std_last = 1
         std_ratio = 1
 
+        min_scale = 0   # The current minimum scale of interest. If this ever equals or exceeds the scale_count
+                        # value, it will also break the following loop.
+
         # The following is the major loop. Its exit conditions are reached if if the number of major loop iterations
         # exceeds a user defined value, the maximum wavelet coefficient is zero or the standard deviation of the
         # residual drops below a user specified accuracy threshold.
 
-        while (((major_loop_niter<major_loop_miter) & (max_coeff>0)) & (np.abs(std_ratio)>accuracy)):
+        while (((major_loop_niter<major_loop_miter) & (max_coeff>0)) & (std_ratio>accuracy)):
 
-            min_scale = 0   # The current minimum scale of interest. If this ever equals or exceeds the scale_count
-                            # value, it will also break the following loop.
+            if min_scale>0:
+                print "WARNING - MINSCALE IS >0 iIN MAJOR LOOP."
+                break
 
             while (min_scale<scale_count):
 
@@ -218,7 +226,7 @@ class FitsImage:
                 # We choose to only consider scales up to the scale containing the maximum wavelet coefficient,
                 # and ignore scales at or below the scale adjustment.
 
-                dirty_decomposition_thresh = dirty_decomposition_thresh[scale_adjust:max_scale,:,:]
+                dirty_decomposition_thresh_slice = dirty_decomposition_thresh[scale_adjust:max_scale,:,:]
 
                 # The following is a call to the externally defined source extraction function. It returns an array
                 # populated with the wavelet coefficients of structures of interest in the image. This basically refers
@@ -226,7 +234,7 @@ class FitsImage:
                 # maximum  at that scale.
 
                 extracted_sources, extracted_sources_mask = \
-                    tools.source_extraction(dirty_decomposition_thresh, tolerance, mode=extraction_mode)
+                    tools.source_extraction(dirty_decomposition_thresh_slice, tolerance, mode=extraction_mode)
 
                 # The wavelet coefficients of the extracted sources are recomposed into a single image,
                 # which should contain only the structures of interest.
@@ -291,7 +299,7 @@ class FitsImage:
 
                     minor_loop_niter += 1
 
-                    print "SNR at iteration {0} = {1}".format(minor_loop_niter, snr_current)
+                    # print "SNR at iteration {0} = {1}".format(minor_loop_niter, snr_current)
 
                     if (minor_loop_niter==1)&(snr_current>40):
                         print "SNR too large - false detection. Incrementing the minimum scale."
@@ -321,14 +329,20 @@ class FitsImage:
 
                 print "{} minor loop iterations performed.".format(minor_loop_niter)
 
-                if (min_scale==0):
-                    break
-
                 if ((minor_loop_niter==minor_loop_miter)&(snr_current>10.5)):
+                    print "Maximum number of minor loop iterations exceeded. Model reached ~{}% error."\
+                                    .format(int(100/np.power(10,snr_current/20)))
                     min_scale = 0
                     break
 
+                if (min_scale==0):
+                    break
+
 ###################################################END OF MINOR LOOP###################################################
+
+            if min_scale==scale_count:
+                "All scales are performing poorly - stopping."
+                break
 
             if max_coeff>0:
 
@@ -336,19 +350,50 @@ class FitsImage:
 
                 residual = self.dirty_data - conv.fft_convolve(model, psf_data_fft, conv_device, conv_mode)
 
+                std_last = std_current
+                std_current = np.std(residual)
+                std_ratio = (std_last-std_current)/std_last
+
                 dirty_subregion = residual[subregion_slice]
 
                 major_loop_niter += 1
                 print "{} major loop iterations performed.".format(major_loop_niter)
 
-            std_last = std_current
-            std_current = np.std(residual)
-            std_ratio = (std_last-std_current)/std_last
+            if (major_loop_niter==0):
+                self.complete = True
+                break
 
             print "Residual standard standard deviation ratio: ", std_ratio
 
-        self.save_fits(model, "3C147_model_512px")
-        self.save_fits(residual, "3C147_residual_512px")
+        if not self.complete:
+            self.model += model
+            self.residual = residual
+
+    def evenmoresane(self, subregion=None, sigma_level=4, loop_gain=0.1, tolerance=0.7, accuracy=1e-6,
+                     major_loop_miter=100, minor_loop_miter=30, decom_mode="ser", core_count=1, conv_device='cpu',
+                     conv_mode='linear', extraction_mode='cpu', enforce_positivity=False):
+
+        dirty_data = self.dirty_data
+
+        scale_count = 1
+
+        while not (self.complete):
+
+            print "OPERATING AT SCALE: ", scale_count
+
+            self.moresane(subregion=subregion, scale_count=scale_count, sigma_level=sigma_level, loop_gain=loop_gain,
+                          tolerance=tolerance, accuracy=accuracy, major_loop_miter=major_loop_miter,
+                          minor_loop_miter=minor_loop_miter, decom_mode=decom_mode, core_count=core_count,
+                          conv_device=conv_device, conv_mode=conv_mode, extraction_mode=extraction_mode,
+                          enforce_positivity=enforce_positivity)
+
+            self.dirty_data = self.residual
+
+            scale_count +=  1
+
+            print "FLAG: ", self.complete
+
+        self.dirty_data = dirty_data
 
     def save_fits(self, data, name):
         """
@@ -363,11 +408,13 @@ if __name__ == "__main__":
     test = FitsImage("DIRTY.fits","PSF.fits")
 
     start_time = time.time()
-    test.moresane(subregion=512, major_loop_miter=100, minor_loop_miter=50, scale_count=5, tolerance=0.7, \
-                                                                                                  conv_mode="circular")
+    test.evenmoresane(subregion=512, major_loop_miter=100, minor_loop_miter=50, tolerance=0.7, \
+                    conv_mode="circular", accuracy=1e-9, loop_gain=0.3, enforce_positivity=True)
     end_time = time.time()
     print("Elapsed time was %g seconds" % (end_time - start_time))
 
+    test.save_fits(test.model, "3C147_model_512px")
+    test.save_fits(test.residual, "3C147_residual_512px")
 
 
 
