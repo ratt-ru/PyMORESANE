@@ -36,7 +36,7 @@ class FitsImage:
 
     def moresane(self, subregion=None, scale_count=None, sigma_level=4, loop_gain=0.1, tolerance=0.7, accuracy=1e-6,
                  major_loop_miter=100, minor_loop_miter=30, decom_mode="ser", core_count=1, conv_device='cpu',
-                 conv_mode='linear', extraction_mode='cpu'):
+                 conv_mode='linear', extraction_mode='cpu', enforce_positivity=False):
         """
         Primary method for wavelet analysis and subsequent deconvolution.
 
@@ -125,6 +125,9 @@ class FitsImage:
                     psf_data_fft = conv.pad_array(self.psf_data)
                     psf_data_fft = np.fft.rfft2(psf_data_fft)
 
+            else:
+                print "Invalid convolution mode - aborting execution."
+
         else:
             print "Invalid convolution device - aborting execution."
 
@@ -143,34 +146,37 @@ class FitsImage:
 
         major_loop_niter = 0
         max_coeff = 1
-        residual_std = 1
 
         model = np.zeros_like(self.dirty_data)
+
+        std_current = 1
+        std_last = 1
+        std_ratio = 1
 
         # The following is the major loop. Its exit conditions are reached if if the number of major loop iterations
         # exceeds a user defined value, the maximum wavelet coefficient is zero or the standard deviation of the
         # residual drops below a user specified accuracy threshold.
 
-        while (((major_loop_niter<major_loop_miter) & (max_coeff>0)) & (np.abs(residual_std)>accuracy)):
+        while (((major_loop_niter<major_loop_miter) & (max_coeff>0)) & (np.abs(std_ratio)>accuracy)):
 
-            stop_flag = 0   # A flag to break out of the following loop.
             min_scale = 0   # The current minimum scale of interest. If this ever equals or exceeds the scale_count
                             # value, it will also break the following loop.
 
-            while ((stop_flag!=1) & (min_scale<scale_count)):
+            while (min_scale<scale_count):
 
                 # This is the IUWT decomposition of the dirty image subregion up to scale_count, followed by a
                 # thresholding of the resulting wavelet coefficients based on the MAD estimator.
 
-                dirty_decomposition = iuwt.iuwt_decomposition(dirty_subregion, scale_count, 0, decom_mode, core_count)
-                dirty_decomposition_thresh = tools.threshold(dirty_decomposition, sigma_level=sigma_level)
+                if min_scale==0:
+                    dirty_decomposition = iuwt.iuwt_decomposition(dirty_subregion, scale_count, 0, decom_mode, core_count)
+                    dirty_decomposition_thresh = tools.threshold(dirty_decomposition, sigma_level=sigma_level)
 
-                # The following calculates and stores the normalised maximum at each scale.
+                    # The following calculates and stores the normalised maximum at each scale.
 
-                normalised_scale_maxima = np.empty_like(psf_energies)
+                    normalised_scale_maxima = np.empty_like(psf_energies)
 
-                for i in range(dirty_decomposition_thresh.shape[0]):
-                    normalised_scale_maxima[i] = np.max(dirty_decomposition_thresh[i,:,:])/psf_energies[i]
+                    for i in range(dirty_decomposition_thresh.shape[0]):
+                        normalised_scale_maxima[i] = np.max(dirty_decomposition_thresh[i,:,:])/psf_energies[i]
 
                 # The following stores the index, scale and value of the global maximum coefficient.
 
@@ -178,6 +184,7 @@ class FitsImage:
                 max_scale = max_index + 1
                 max_coeff = normalised_scale_maxima[max_index,0,0]
 
+                print "Minimum scale: ", min_scale
                 print "Maximum scale: ", max_scale
                 print "Maximum coefficient: ", max_coeff
 
@@ -199,7 +206,7 @@ class FitsImage:
                         print "Scale {} is empty. Ignoring scales <= {}".format(scale_adjust, scale_adjust)
                         break
 
-                scale_adjust = max(min_scale, scale_adjust)
+                print "Scale adjust: ", scale_adjust
 
                 # This is an escape condition for the loop. If the maximum coefficient is zero, then there is no
                 # useful information left in the wavelets and MORESANE is complete.
@@ -207,8 +214,6 @@ class FitsImage:
                 if max_coeff == 0:
                     print "No significant wavelet coefficients detected."
                     break
-                    # stop_flag = 1
-                    # continue
 
                 # We choose to only consider scales up to the scale containing the maximum wavelet coefficient,
                 # and ignore scales at or below the scale adjustment.
@@ -259,7 +264,7 @@ class FitsImage:
 
                     # The following enforces the positivity constraint which necessitates some recalculation.
 
-                    if np.min(xn)<0:
+                    if (np.min(xn)<0) & (enforce_positivity):
 
                         xn[xn<0] = 0
                         p = (xn-x)/alpha
@@ -288,15 +293,15 @@ class FitsImage:
 
                     print "SNR at iteration {0} = {1}".format(minor_loop_niter, snr_current)
 
+                    if (minor_loop_niter==1)&(snr_current>40):
+                        print "SNR too large - false detection. Incrementing the minimum scale."
+                        min_scale += 1
+                        break
+
                     if snr_current>40:
                         print "Model has reached <1% error - exiting minor loop."
                         x = xn
                         min_scale = 0
-                        break
-
-                    if (minor_loop_niter==1)&(snr_current>40):
-                        print "SNR too large - false detection. Incrementing the minimum scale."
-                        min_scale += 1
                         break
 
                     if (minor_loop_niter>1)&(snr_current<snr_last):
@@ -307,7 +312,7 @@ class FitsImage:
                             min_scale = 0
                             break
                         else:
-                            print "SNR too small. Incrementing Incrementing the minimum scale."
+                            print "SNR too small. Incrementing the minimum scale."
                             min_scale += 1
                             break
 
@@ -316,7 +321,11 @@ class FitsImage:
 
                 print "{} minor loop iterations performed.".format(minor_loop_niter)
 
-                if min_scale==0:
+                if (min_scale==0):
+                    break
+
+                if ((minor_loop_niter==minor_loop_miter)&(snr_current>10.5)):
+                    min_scale = 0
                     break
 
 ###################################################END OF MINOR LOOP###################################################
@@ -332,20 +341,42 @@ class FitsImage:
                 major_loop_niter += 1
                 print "{} major loop iterations performed.".format(major_loop_niter)
 
-            # break
+            std_last = std_current
+            std_current = np.std(residual)
+            std_ratio = (std_last-std_current)/std_last
+
+            print "Residual standard standard deviation ratio: ", std_ratio
+
+        self.save_fits(model, "3C147_model_512px")
+        self.save_fits(residual, "3C147_residual_512px")
+
+    def save_fits(self, data, name):
+        """
+        This method simply saves the model components and the residual.
+        """
+        data = data.reshape(1, 1, data.shape[0], data.shape[0])
+        new_file = pyfits.PrimaryHDU(data,self.img_hdu_list[0].header)
+        new_file.writeto("{}.fits".format(name), clobber=True)
 
 if __name__ == "__main__":
-    test = FitsImage("3C147.fits","3C147_PSF.fits")
-    # test = FitsImage("DIRTY.fits","PSF.fits")
+    # test = FitsImage("3C147.fits","3C147_PSF.fits")
+    test = FitsImage("DIRTY.fits","PSF.fits")
 
     start_time = time.time()
-    test.moresane(subregion=512, minor_loop_miter=25, scale_count=5, tolerance=0.5, conv_mode="circular")
+    test.moresane(subregion=512, major_loop_miter=100, minor_loop_miter=50, scale_count=5, tolerance=0.7, \
+                                                                                                  conv_mode="circular")
     end_time = time.time()
     print("Elapsed time was %g seconds" % (end_time - start_time))
 
-                # pb.figure()
-                # pb.subplot(121)
-                # pb.imshow(recomposed_sources)
-                # pb.subplot(122)
-                # pb.imshow(iuwt.iuwt_recomposition(model_sources, scale_adjust, decom_mode, core_count))
-                # pb.show()
+
+
+
+
+
+
+
+
+
+
+
+
