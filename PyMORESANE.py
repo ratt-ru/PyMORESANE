@@ -340,6 +340,7 @@ class FitsImage:
 
 ###################################################END OF MINOR LOOP###################################################
 
+            print "Miscale at end:", min_scale
             if min_scale==scale_count:
                 "All scales are performing poorly - stopping."
                 break
@@ -354,6 +355,11 @@ class FitsImage:
                 std_current = np.std(residual)
                 std_ratio = (std_last-std_current)/std_last
 
+                if std_ratio<0:
+                    "Residual has become worse - reverting changes."
+                    model[subregion_slice] -= loop_gain*x
+                    residual = self.dirty_data - conv.fft_convolve(model, psf_data_fft, conv_device, conv_mode)
+
                 dirty_subregion = residual[subregion_slice]
 
                 major_loop_niter += 1
@@ -363,9 +369,7 @@ class FitsImage:
                 self.complete = True
                 break
 
-            print "Residual standard standard deviation ratio: ", std_ratio
-
-        if not self.complete:
+        if major_loop_niter>0:
             self.model += model
             self.residual = residual
 
@@ -391,7 +395,8 @@ class FitsImage:
 
             scale_count +=  1
 
-            print "FLAG: ", self.complete
+            if (scale_count>(np.log2(self.dirty_data.shape[0]))-1):
+                break
 
         self.dirty_data = dirty_data
 
@@ -408,13 +413,17 @@ if __name__ == "__main__":
     test = FitsImage("DIRTY.fits","PSF.fits")
 
     start_time = time.time()
-    test.evenmoresane(subregion=512, major_loop_miter=100, minor_loop_miter=50, tolerance=0.7, \
-                    conv_mode="circular", accuracy=1e-9, loop_gain=0.3, enforce_positivity=True)
+    test.moresane(scale_count = 9, major_loop_miter=100, minor_loop_miter=30, tolerance=0.8, \
+                    conv_mode="linear", accuracy=1e-6, loop_gain=0.2, enforce_positivity=True, sigma_level=5,
+                    decom_mode="gpu", extraction_mode="gpu", conv_device="gpu")
+    # test.evenmoresane(major_loop_miter=100, minor_loop_miter=30, tolerance=0.8, \
+    #                 conv_mode="linear", accuracy=1e-6, loop_gain=0.2, enforce_positivity=True, sigma_level=5,
+    #                 decom_mode="gpu", extraction_mode="gpu", conv_device="gpu")
     end_time = time.time()
     print("Elapsed time was %g seconds" % (end_time - start_time))
 
-    test.save_fits(test.model, "3C147_model_512px")
-    test.save_fits(test.residual, "3C147_residual_512px")
+    test.save_fits(test.model, "GPU_DIRTY_model_2048px_5sigma_singlerun")
+    test.save_fits(test.residual, "GPU_DIRTY_residual_2048px_5sigma_singlerun")
 
 
 
