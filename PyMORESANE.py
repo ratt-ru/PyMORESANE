@@ -38,7 +38,7 @@ class FitsImage:
         self.model = np.zeros_like(self.dirty_data)
         self.residual = np.zeros_like(self.dirty_data)
 
-    def moresane(self, subregion=None, scale_count=None, sigma_level=4, loop_gain=0.1, tolerance=0.7, accuracy=1e-6,
+    def moresane(self, subregion=None, scale_count=None, sigma_level=4, loop_gain=0.1, tolerance=0.75, accuracy=1e-6,
                  major_loop_miter=100, minor_loop_miter=30, decom_mode="ser", core_count=1, conv_device='cpu',
                  conv_mode='linear', extraction_mode='cpu', enforce_positivity=False):
         """
@@ -50,7 +50,7 @@ class FitsImage:
                                                 initialisation.
         sigma_level         (default=4)         Number of sigma at which thresholding is to be performed.
         loop_gain           (default=0.1):      Loop gain for the deconvolution.
-        tolerance           (default=0.7):      Tolerance level for object extraction. Significant objects contain
+        tolerance           (default=0.75):     Tolerance level for object extraction. Significant objects contain
                                                 wavelet coefficients greater than the tolerance multiplied by the
                                                 maximum wavelet coefficient in the scale under consideration.
         accuracy            (default=1e-6):     Threshold on the standard deviation of the residual noise. Exit main
@@ -60,10 +60,11 @@ class FitsImage:
         minor_loop_miter    (default=30):       Maximum number of iterations allowed in the minor loop. Serves as an
                                                 exit condition when the SNR is does not reach a maximum.
         decom_mode          (default='ser'):    Specifier for decomposition mode - serial, multiprocessing, or gpu.
-        core_count          (default=1):        In the event that multiprocessing, specifies the number of cores.
+        core_count          (default=1):        For multiprocessing, specifies the number of cores.
         conv_device         (default='cpu'):    Specifier for device to be used - cpu or gpu.
         conv_mode           (default='linear'): Specifier for convolution mode - linear or circular.
         extraction_mode     (default='cpu'):    Specifier for mode to be used - cpu or gpu.
+        enforce_positivity  (default=False):    Boolean specifier for whether or not a model must be strictly positive.
 
         """
 
@@ -373,13 +374,47 @@ class FitsImage:
             self.model += model
             self.residual = residual
 
-    def evenmoresane(self, subregion=None, sigma_level=4, loop_gain=0.1, tolerance=0.7, accuracy=1e-6,
-                     major_loop_miter=100, minor_loop_miter=30, decom_mode="ser", core_count=1, conv_device='cpu',
-                     conv_mode='linear', extraction_mode='cpu', enforce_positivity=False):
+    def moresane_by_scale(self, start_scale=1, stop_scale=20, subregion=None, sigma_level=4, loop_gain=0.1,
+                          tolerance=0.75, accuracy=1e-6, major_loop_miter=100, minor_loop_miter=30, decom_mode="ser",
+                          core_count=1, conv_device='cpu', conv_mode='linear', extraction_mode='cpu',
+                          enforce_positivity=False):
+        """
+        Extension of the MORESANE algorithm. This takes a scale-by-scale approach, attempting to remove all sources
+        at the lower scales before moving onto the higher ones. At each step the algorithm may return to previous
+        scales to remove the sources uncovered by the deconvolution.
+
+        INPUTS:
+        start_scale         (default=1)         The first scale which is to be considered.
+        stop_scale          (default=20)        The maximum scale which is to be considered. Optional.
+        subregion           (default=None):     Size, in pixels, of the central region to be analyzed and deconvolved.
+        sigma_level         (default=4)         Number of sigma at which thresholding is to be performed.
+        loop_gain           (default=0.1):      Loop gain for the deconvolution.
+        tolerance           (default=0.75):     Tolerance level for object extraction. Significant objects contain
+                                                wavelet coefficients greater than the tolerance multiplied by the
+                                                maximum wavelet coefficient in the scale under consideration.
+        accuracy            (default=1e-6):     Threshold on the standard deviation of the residual noise. Exit main
+                                                loop when this threshold is reached.
+        major_loop_miter    (default=100):      Maximum number of iterations allowed in the major loop. Exit
+                                                condition.
+        minor_loop_miter    (default=30):       Maximum number of iterations allowed in the minor loop. Serves as an
+                                                exit condition when the SNR does not reach a maximum.
+        decom_mode          (default='ser'):    Specifier for decomposition mode - serial, multiprocessing, or gpu.
+        core_count          (default=1):        In the event that multiprocessing, specifies the number of cores.
+        conv_device         (default='cpu'):    Specifier for device to be used - cpu or gpu.
+        conv_mode           (default='linear'): Specifier for convolution mode - linear or circular.
+        extraction_mode     (default='cpu'):    Specifier for mode to be used - cpu or gpu.
+        enforce_positivity  (default=False):    Boolean specifier for whether or not a model must be strictly positive.
+
+        OUTPUTS:
+        self.model          (no default):       Model extracted by the algorithm.
+        self.residual       (no default):       Residual signal after deconvolution.
+        """
+
+        # The following preserves the dirty image as it will be changed on every iteration.
 
         dirty_data = self.dirty_data
 
-        scale_count = 1
+        scale_count = start_scale
 
         while not (self.complete):
 
@@ -396,13 +431,24 @@ class FitsImage:
             scale_count +=  1
 
             if (scale_count>(np.log2(self.dirty_data.shape[0]))-1):
+                "Maximum scale reached - finished."
                 break
+
+            if (scale_count>stop_scale):
+                "Maximum scale reached - finished."
+                break
+
+        # Restores the original dirty image.
 
         self.dirty_data = dirty_data
 
     def save_fits(self, data, name):
         """
         This method simply saves the model components and the residual.
+
+        INPUTS:
+        data    (no default)    Data which is to be saved.
+        name    (no default)    File name for new .fits file. Will overwrite.
         """
         data = data.reshape(1, 1, data.shape[0], data.shape[0])
         new_file = pyfits.PrimaryHDU(data,self.img_hdu_list[0].header)
@@ -413,17 +459,17 @@ if __name__ == "__main__":
     test = FitsImage("DIRTY.fits","PSF.fits")
 
     start_time = time.time()
-    test.moresane(scale_count = 9, major_loop_miter=100, minor_loop_miter=30, tolerance=0.8, \
-                    conv_mode="linear", accuracy=1e-6, loop_gain=0.2, enforce_positivity=True, sigma_level=5,
-                    decom_mode="gpu", extraction_mode="gpu", conv_device="gpu")
-    # test.evenmoresane(major_loop_miter=100, minor_loop_miter=30, tolerance=0.8, \
+    # test.moresane(scale_count = 9, major_loop_miter=100, minor_loop_miter=30, tolerance=0.8, \
     #                 conv_mode="linear", accuracy=1e-6, loop_gain=0.2, enforce_positivity=True, sigma_level=5,
     #                 decom_mode="gpu", extraction_mode="gpu", conv_device="gpu")
+    test.moresane_by_scale(stop_scale=6, major_loop_miter=100, minor_loop_miter=50, tolerance=0.85, \
+                    conv_mode="linear", accuracy=1e-6, loop_gain=0.1, enforce_positivity=True, sigma_level=3,
+                    decom_mode="gpu", extraction_mode="gpu", conv_device="gpu")
     end_time = time.time()
     print("Elapsed time was %g seconds" % (end_time - start_time))
 
-    test.save_fits(test.model, "GPU_DIRTY_model_2048px_5sigma_singlerun")
-    test.save_fits(test.residual, "GPU_DIRTY_residual_2048px_5sigma_singlerun")
+    test.save_fits(test.model, "GPU_DIRTY_model_2048px_3sigma")
+    test.save_fits(test.residual, "GPU_DIRTY_residual_2048px_3sigma")
 
 
 
