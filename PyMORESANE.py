@@ -80,7 +80,7 @@ class FitsImage:
 
         if (scale_count is None) or (scale_count>(np.log2(self.dirty_data_shape[0])-1)):
             scale_count = int(np.log2(self.dirty_data_shape[0])-1)
-            print "Assuming maximum scale is {}.".format(scale_count)
+            logger.info("Assuming maximum scale is {}.".format(scale_count))
 
         # The following creates arrays with dimensions equal to subregion and containing the values of the dirty
         # image and psf in their central subregions.
@@ -113,7 +113,7 @@ class FitsImage:
                     psf_data_fft = conv.gpu_r2c_fft(psf_data_fft, is_gpuarray=False, store_on_gpu=True)
 
             else:
-                print "Invalid convolution mode - aborting execution."
+                logger.warning("Invalid convolution mode - aborting execution.")
                 return
 
         elif conv_device=="cpu":
@@ -135,11 +135,11 @@ class FitsImage:
                     psf_data_fft = np.fft.rfft2(psf_data_fft)
 
             else:
-                print "Invalid convolution mode - aborting execution."
+                logger.warning("Invalid convolution mode - aborting execution.")
                 return
 
         else:
-            print "Invalid convolution device - aborting execution."
+            logger.warning("Invalid convolution device - aborting execution.")
             return
 
         # The following is a call to the first of the IUWT (Isotropic Undecimated Wavelet Transform) functions. This
@@ -203,11 +203,11 @@ class FitsImage:
                 # useful information left in the wavelets and MORESANE is complete.
 
                 if max_coeff == 0:
-                    print "No significant wavelet coefficients detected."
+                    logger.info("No significant wavelet coefficients detected.")
                     break
 
-                print "Minimum scale = ", min_scale
-                print "Maximum scale = ", max_scale
+                logger.debug("Minimum scale = {}".format(min_scale))
+                logger.info("Maximum scale = {}".format(max_scale))
 
                 # The following constitutes a major change to the original implementation - the aim is to establish
                 # as soon as possible which scales are to be omitted on the current iteration. This attempts to find
@@ -220,14 +220,13 @@ class FitsImage:
                     if max_index > 1:
                         if (normalised_scale_maxima[i,0,0] > normalised_scale_maxima[i+1,0,0]):
                             scale_adjust = i + 1
-                            print "Scale {} contains a local maxima. Ignoring scales <= {}".format(scale_adjust, scale_adjust)
+                            logger.info("Scale {} contains a local maxima. Ignoring scales <= {}"
+                                            .format(scale_adjust, scale_adjust))
                             break
                     if (normalised_scale_maxima[i,0,0] == 0):
                         scale_adjust = i + 1
-                        print "Scale {} is empty. Ignoring scales <= {}".format(scale_adjust, scale_adjust)
+                        logger.info("Scale {} is empty. Ignoring scales <= {}".format(scale_adjust, scale_adjust))
                         break
-
-                print "Scale adjust = ", scale_adjust
 
                 # We choose to only consider scales up to the scale containing the maximum wavelet coefficient,
                 # and ignore scales at or below the scale adjustment.
@@ -307,42 +306,41 @@ class FitsImage:
 
                     minor_loop_niter += 1
 
-                    # print "SNR at iteration {0} = {1}".format(minor_loop_niter, snr_current)
+                    logger.debug("SNR at iteration {0} = {1}".format(minor_loop_niter, snr_current))
 
                     # The following flow control determines whether or not the model is adequate and if a
                     # recalculation is required.
 
                     if (minor_loop_niter==1)&(snr_current>40):
-                        print "SNR too large - false detection. Incrementing the minimum scale."
+                        logger.info("SNR too large - false detection. Incrementing the minimum scale.")
                         min_scale += 1
                         break
 
                     if snr_current>40:
-                        print "Model has reached <1% error - exiting minor loop."
+                        logger.info("Model has reached <1% error - exiting minor loop.")
                         x = xn
                         min_scale = 0
                         break
 
                     if (minor_loop_niter>1)&(snr_current<snr_last):
-                        print "SNR has decreased - checking case."
                         if (snr_current>10.5):
-                            print "Model has reached ~{}% error - exiting minor loop."\
-                                    .format(int(100/np.power(10,snr_current/20)))
+                            logger.info("SNR has decreased - Model has reached ~{}% error - exiting minor loop."\
+                                    .format(int(100/np.power(10,snr_current/20))))
                             min_scale = 0
                             break
                         else:
-                            print "SNR too small. Incrementing the minimum scale."
+                            logger.info("SNR has decreased - SNR too small. Incrementing the minimum scale.")
                             min_scale += 1
                             break
 
                     r = rn
                     x = xn
 
-                print "{} minor loop iterations performed.".format(minor_loop_niter)
+                logger.info("{} minor loop iterations performed.".format(minor_loop_niter))
 
                 if ((minor_loop_niter==minor_loop_miter)&(snr_current>10.5)):
-                    print "Maximum number of minor loop iterations exceeded. Model reached ~{}% error."\
-                                    .format(int(100/np.power(10,snr_current/20)))
+                    logger.info("Maximum number of minor loop iterations exceeded. Model reached ~{}% error."\
+                                    .format(int(100/np.power(10,snr_current/20))))
                     min_scale = 0
                     break
 
@@ -352,7 +350,7 @@ class FitsImage:
 ###################################################END OF MINOR LOOP###################################################
 
             if min_scale==scale_count:
-                print "All scales are performing poorly - stopping."
+                logger.info("All scales are performing poorly - stopping.")
                 break
 
             # The following handles the deconvolution step. The model convolved with the psf is subtracted from the
@@ -372,7 +370,7 @@ class FitsImage:
                 # previous model and residual are preserved.
 
                 if std_ratio<0:
-                    print "Residual has worsened - reverting changes."
+                    logger.info("Residual has worsened - reverting changes.")
                     model[subregion_slice] -= loop_gain*x
                     residual = self.dirty_data - conv.fft_convolve(model, psf_data_fft, conv_device, conv_mode)
 
@@ -381,13 +379,13 @@ class FitsImage:
                 dirty_subregion = residual[subregion_slice]
 
                 major_loop_niter += 1
-                print "{} major loop iterations performed.".format(major_loop_niter)
+                logger.info("{} major loop iterations performed.".format(major_loop_niter))
 
             # The following condition will only trigger if MORESANE did no work - this is an exit condition for the
             # by-scale approach.
 
             if (major_loop_niter==0):
-                print "Current MORESANE iteration did no work - finished."
+                logger.info("Current MORESANE iteration did no work - finished.")
                 self.complete = True
                 break
 
@@ -442,7 +440,7 @@ class FitsImage:
 
         while not (self.complete):
 
-            print "OPERATING AT SCALE: ", scale_count
+            logger.info("MORESANE at scale {}".format(scale_count))
 
             self.moresane(subregion=subregion, scale_count=scale_count, sigma_level=sigma_level, loop_gain=loop_gain,
                           tolerance=tolerance, accuracy=accuracy, major_loop_miter=major_loop_miter,
@@ -455,11 +453,11 @@ class FitsImage:
             scale_count +=  1
 
             if (scale_count>(np.log2(self.dirty_data.shape[0]))-1):
-                "Maximum scale reached - finished."
+                logger.info("Maximum scale reached - finished.")
                 break
 
             if (scale_count>stop_scale):
-                "Maximum scale reached - finished."
+                logger.info("Maximum scale reached - finished.")
                 break
 
         # Restores the original dirty image.
@@ -483,10 +481,10 @@ if __name__ == "__main__":
     logger.setLevel(logging.DEBUG)
 
     fh = logging.FileHandler('PyMORESANE.log', mode='w')
-    fh.setLevel(logging.DEBUG)
+    fh.setLevel(logging.INFO)
 
     ch = logging.StreamHandler()
-    ch.setLevel(logging.DEBUG)
+    ch.setLevel(logging.INFO)
 
     formatter = logging.Formatter('%(asctime)s [%(levelname)s]: %(''message)s', datefmt='[%m/%d/%Y] [%I:%M:%S]')
     fh.setFormatter(formatter)
@@ -504,11 +502,11 @@ if __name__ == "__main__":
     # test.moresane(scale_count = 9, major_loop_miter=100, minor_loop_miter=30, tolerance=0.8, \
     #                 conv_mode="linear", accuracy=1e-6, loop_gain=0.2, enforce_positivity=True, sigma_level=5,
     #                 decom_mode="gpu", extraction_mode="gpu", conv_device="gpu")
-    # test.moresane_by_scale(major_loop_miter=100, minor_loop_miter=50, tolerance=0.85,
-    #                 conv_mode="linear", accuracy=1e-6, loop_gain=0.3, enforce_positivity=True, sigma_level=3,
-    #                 decom_mode="gpu", extraction_mode="gpu", conv_device="gpu")
-    test.moresane_by_scale(subregion=512, major_loop_miter=100, minor_loop_miter=25, tolerance=0.85,
-                    conv_mode="circular", accuracy=1e-6, loop_gain=0.3, enforce_positivity=True, sigma_level=5)
+    test.moresane_by_scale(major_loop_miter=100, minor_loop_miter=50, tolerance=0.80,
+                    conv_mode="linear", accuracy=1e-6, loop_gain=0.3, enforce_positivity=True, sigma_level=4,
+                    decom_mode="gpu", extraction_mode="gpu", conv_device="gpu")
+    # test.moresane_by_scale(subregion=512, major_loop_miter=100, minor_loop_miter=25, tolerance=0.85,
+    #                 conv_mode="circular", accuracy=1e-6, loop_gain=0.3, enforce_positivity=True, sigma_level=5)
 
     end_time = time.time()
     logger.info("Elapsed time was %s." % (time.strftime('%H:%M:%S', time.gmtime(end_time - start_time))))
