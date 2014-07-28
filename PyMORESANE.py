@@ -66,6 +66,10 @@ class FitsImage:
         extraction_mode     (default='cpu'):    Specifier for mode to be used - cpu or gpu.
         enforce_positivity  (default=False):    Boolean specifier for whether or not a model must be strictly positive.
 
+        OUTPUTS:
+        self.model          (no default):       Model extracted by the algorithm.
+        self.residual       (no default):       Residual signal after deconvolution.
+
         """
 
         # If neither subregion nor scale_count is specified, the following handles the assignment of default values.
@@ -80,7 +84,7 @@ class FitsImage:
             print "Assuming maximum scale is {}.".format(scale_count)
 
         # The following creates arrays with dimensions equal to subregion and containing the values of the dirty
-        # image and psf in their central subregions. TODO: Allow specification of deconvolution center.
+        # image and psf in their central subregions.
 
         subregion_slice = tuple([slice(self.dirty_data_shape[0]/2-subregion/2, self.dirty_data_shape[0]/2+subregion/2),
                                  slice(self.dirty_data_shape[1]/2-subregion/2, self.dirty_data_shape[1]/2+subregion/2)])
@@ -111,6 +115,7 @@ class FitsImage:
 
             else:
                 print "Invalid convolution mode - aborting execution."
+                return
 
         elif conv_device=="cpu":
 
@@ -132,9 +137,11 @@ class FitsImage:
 
             else:
                 print "Invalid convolution mode - aborting execution."
+                return
 
         else:
             print "Invalid convolution device - aborting execution."
+            return
 
         # The following is a call to the first of the IUWT (Isotropic Undecimated Wavelet Transform) functions. This
         # returns the decomposition of the PSF. The norm of each scale is found - these correspond to the energies or
@@ -167,14 +174,14 @@ class FitsImage:
 
         while (((major_loop_niter<major_loop_miter) & (max_coeff>0)) & (std_ratio>accuracy)):
 
-            if min_scale>0:
-                print "WARNING - MINSCALE IS >0 iIN MAJOR LOOP."
-                break
+            # The first interior loop allows for the model to be re-estimated at a higher scale in the case of a poor
+            # SNR. If, however, a better job cannot be done, the loop will terminate.
 
             while (min_scale<scale_count):
 
                 # This is the IUWT decomposition of the dirty image subregion up to scale_count, followed by a
-                # thresholding of the resulting wavelet coefficients based on the MAD estimator.
+                # thresholding of the resulting wavelet coefficients based on the MAD estimator. This is a denoising
+                # operation.
 
                 if min_scale==0:
                     dirty_decomposition = iuwt.iuwt_decomposition(dirty_subregion, scale_count, 0, decom_mode, core_count)
@@ -193,9 +200,15 @@ class FitsImage:
                 max_scale = max_index + 1
                 max_coeff = normalised_scale_maxima[max_index,0,0]
 
-                print "Minimum scale: ", min_scale
-                print "Maximum scale: ", max_scale
-                print "Maximum coefficient: ", max_coeff
+                # This is an escape condition for the loop. If the maximum coefficient is zero, then there is no
+                # useful information left in the wavelets and MORESANE is complete.
+
+                if max_coeff == 0:
+                    print "No significant wavelet coefficients detected."
+                    break
+
+                print "Minimum scale = ", min_scale
+                print "Maximum scale = ", max_scale
 
                 # The following constitutes a major change to the original implementation - the aim is to establish
                 # as soon as possible which scales are to be omitted on the current iteration. This attempts to find
@@ -215,14 +228,7 @@ class FitsImage:
                         print "Scale {} is empty. Ignoring scales <= {}".format(scale_adjust, scale_adjust)
                         break
 
-                print "Scale adjust: ", scale_adjust
-
-                # This is an escape condition for the loop. If the maximum coefficient is zero, then there is no
-                # useful information left in the wavelets and MORESANE is complete.
-
-                if max_coeff == 0:
-                    print "No significant wavelet coefficients detected."
-                    break
+                print "Scale adjust = ", scale_adjust
 
                 # We choose to only consider scales up to the scale containing the maximum wavelet coefficient,
                 # and ignore scales at or below the scale adjustment.
@@ -295,12 +301,17 @@ class FitsImage:
                     model_sources = iuwt.iuwt_decomposition(model_sources, max_scale, scale_adjust, decom_mode, core_count)
                     model_sources = extracted_sources_mask*model_sources
 
+                    # We compare our model to the sources extracted from the data.
+
                     snr_last = snr_current
                     snr_current = tools.snr_ratio(extracted_sources, model_sources)
 
                     minor_loop_niter += 1
 
                     # print "SNR at iteration {0} = {1}".format(minor_loop_niter, snr_current)
+
+                    # The following flow control determines whether or not the model is adequate and if a
+                    # recalculation is required.
 
                     if (minor_loop_niter==1)&(snr_current>40):
                         print "SNR too large - false detection. Incrementing the minimum scale."
@@ -341,10 +352,12 @@ class FitsImage:
 
 ###################################################END OF MINOR LOOP###################################################
 
-            print "Miscale at end:", min_scale
             if min_scale==scale_count:
-                "All scales are performing poorly - stopping."
+                print "All scales are performing poorly - stopping."
                 break
+
+            # The following handles the deconvolution step. The model convolved with the psf is subtracted from the
+            # dirty image to give the residual.
 
             if max_coeff>0:
 
@@ -356,19 +369,31 @@ class FitsImage:
                 std_current = np.std(residual)
                 std_ratio = (std_last-std_current)/std_last
 
+                # If the most recent deconvolution step is poor, the following reverts the changes so that the
+                # previous model and residual are preserved.
+
                 if std_ratio<0:
-                    "Residual has become worse - reverting changes."
+                    print "Residual has worsened - reverting changes."
                     model[subregion_slice] -= loop_gain*x
                     residual = self.dirty_data - conv.fft_convolve(model, psf_data_fft, conv_device, conv_mode)
+
+                # The current residual becomes the dirty image for the subsequent iteration.
 
                 dirty_subregion = residual[subregion_slice]
 
                 major_loop_niter += 1
                 print "{} major loop iterations performed.".format(major_loop_niter)
 
+            # The following condition will only trigger if MORESANE did no work - this is an exit condition for the
+            # by-scale approach.
+
             if (major_loop_niter==0):
+                print "Current MORESANE iteration did no work - finished."
                 self.complete = True
                 break
+
+        # If MORESANE did work at the current iteration, the following simply updates the values in the class
+        # variables self.model and self.residual.
 
         if major_loop_niter>0:
             self.model += model
