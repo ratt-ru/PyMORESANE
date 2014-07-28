@@ -1,10 +1,9 @@
+import logging
 import pyfits
 import numpy as np
-import math
 import iuwt
 import iuwt_convolution as conv
 import iuwt_toolbox as tools
-import pylab as pb
 import argparse
 
 import time
@@ -79,8 +78,8 @@ class FitsImage:
         if subregion is None:
             subregion = self.dirty_data_shape[0]
 
-        if (scale_count is None) or (scale_count>math.log(self.dirty_data_shape[0],2)-1):
-            scale_count = int(math.log(self.dirty_data_shape[0],2)-1)
+        if (scale_count is None) or (scale_count>(np.log2(self.dirty_data_shape[0])-1)):
+            scale_count = int(np.log2(self.dirty_data_shape[0])-1)
             print "Assuming maximum scale is {}.".format(scale_count)
 
         # The following creates arrays with dimensions equal to subregion and containing the values of the dirty
@@ -480,6 +479,24 @@ class FitsImage:
         new_file.writeto("{}.fits".format(name), clobber=True)
 
 if __name__ == "__main__":
+    logger = logging.getLogger('main')
+    logger.setLevel(logging.DEBUG)
+
+    fh = logging.FileHandler('PyMORESANE.log', mode='w')
+    fh.setLevel(logging.DEBUG)
+
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG)
+
+    formatter = logging.Formatter('%(asctime)s [%(levelname)s]: %(''message)s', datefmt='[%m/%d/%Y] [%I:%M:%S]')
+    fh.setFormatter(formatter)
+    ch.setFormatter(formatter)
+
+    logger.addHandler(fh)
+    logger.addHandler(ch)
+
+    logger.info("Starting...")
+
     # test = FitsImage("3C147.fits","3C147_PSF.fits")
     test = FitsImage("DIRTY.fits","PSF.fits")
 
@@ -487,11 +504,14 @@ if __name__ == "__main__":
     # test.moresane(scale_count = 9, major_loop_miter=100, minor_loop_miter=30, tolerance=0.8, \
     #                 conv_mode="linear", accuracy=1e-6, loop_gain=0.2, enforce_positivity=True, sigma_level=5,
     #                 decom_mode="gpu", extraction_mode="gpu", conv_device="gpu")
-    test.moresane_by_scale(stop_scale=6, major_loop_miter=100, minor_loop_miter=50, tolerance=0.85, \
-                    conv_mode="linear", accuracy=1e-6, loop_gain=0.1, enforce_positivity=True, sigma_level=3,
-                    decom_mode="gpu", extraction_mode="gpu", conv_device="gpu")
+    # test.moresane_by_scale(major_loop_miter=100, minor_loop_miter=50, tolerance=0.85,
+    #                 conv_mode="linear", accuracy=1e-6, loop_gain=0.3, enforce_positivity=True, sigma_level=3,
+    #                 decom_mode="gpu", extraction_mode="gpu", conv_device="gpu")
+    test.moresane_by_scale(subregion=512, major_loop_miter=100, minor_loop_miter=25, tolerance=0.85,
+                    conv_mode="circular", accuracy=1e-6, loop_gain=0.3, enforce_positivity=True, sigma_level=5)
+
     end_time = time.time()
-    print("Elapsed time was %g seconds" % (end_time - start_time))
+    logger.info("Elapsed time was %s." % (time.strftime('%H:%M:%S', time.gmtime(end_time - start_time))))
 
     test.save_fits(test.model, "GPU_DIRTY_model_2048px_3sigma")
     test.save_fits(test.residual, "GPU_DIRTY_residual_2048px_3sigma")
