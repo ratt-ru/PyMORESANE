@@ -15,10 +15,10 @@ def fft_convolve(in1, in2, conv_device='cpu', conv_mode="linear"):
     and GPU.
 
     INPUTS:
-    in1         (no default):           Array containing one set of data, possibly an image.
-    in2         (no default):           Gpuarray containing the FFT of the PSF.
-    conv_device (default = 'cpu'):       Parameter which allows specification of CPU or GPU use.
-    conv_mode   (default = "linear")    Mode specifier for the convolution.
+    in1 (no default): Array containing one set of data, possibly an image.
+    in2 (no default): Gpuarray containing the FFT of the PSF.
+    conv_device (default = 'cpu'): Parameter which allows specification of CPU or GPU use.
+    conv_mode (default = "linear") Mode specifier for the convolution.
     """
 
     # NOTE: Circular convolution assumes a periodic repetition of the input. This can cause edge effects. Linear
@@ -38,7 +38,7 @@ def fft_convolve(in1, in2, conv_device='cpu', conv_mode="linear"):
 
             out1_slice = tuple(slice(0.5*sz,1.5*sz) for sz in in1.shape)
 
-            return np.fft.fftshift(conv_in1_in2)[out1_slice]
+            return np.require(np.fft.fftshift(conv_in1_in2)[out1_slice], np.float32, 'C')
 
         elif conv_mode=="circular":
             fft_in1 = gpu_r2c_fft(in1, store_on_gpu=True)
@@ -57,7 +57,7 @@ def fft_convolve(in1, in2, conv_device='cpu', conv_mode="linear"):
 
             out1_slice = tuple(slice(0.5*sz,1.5*sz) for sz in in1.shape)
 
-            return np.fft.fftshift(np.fft.irfft2(fft_in2*np.fft.rfft2(fft_in1)))[out1_slice]
+            return np.require(np.fft.fftshift(np.fft.irfft2(fft_in2*np.fft.rfft2(fft_in1)))[out1_slice], np.float32, 'C')
 
         elif conv_mode=="circular":
             return np.fft.fftshift(np.fft.irfft2(in2*np.fft.rfft2(in1)))
@@ -67,14 +67,14 @@ def gpu_r2c_fft(in1, is_gpuarray=False, store_on_gpu=False):
     This function makes use of the scikits implementation of the FFT for GPUs to take the real to complex FFT.
 
     INPUTS:
-    in1             (no default):       The array on which the FFT is to be performed.
-    is_gpuarray     (default=True):     Boolean specifier for whether or not input is on the gpu.
-    store_on_gpu    (default=False):    Boolean specifier for whether the result is to be left on the gpu or not.
+    in1 (no default): The array on which the FFT is to be performed.
+    is_gpuarray (default=True): Boolean specifier for whether or not input is on the gpu.
+    store_on_gpu (default=False): Boolean specifier for whether the result is to be left on the gpu or not.
 
     OUTPUTS:
-    gpu_out1        (no default):   The gpu array containing the result.
-        OR
-    gpu_out1.get()  (no default):   The result from the gpu array.
+    gpu_out1 (no default): The gpu array containing the result.
+    OR
+    gpu_out1.get() (no default): The result from the gpu array.
     """
 
     if is_gpuarray:
@@ -99,14 +99,14 @@ def gpu_c2r_ifft(in1, is_gpuarray=False, store_on_gpu=False):
     This function makes use of the scikits implementation of the FFT for GPUs to take the complex to real IFFT.
 
     INPUTS:
-    in1             (no default):       The array on which the IFFT is to be performed.
-    is_gpuarray     (default=True):     Boolean specifier for whether or not input is on the gpu.
-    store_on_gpu    (default=False):    Boolean specifier for whether the result is to be left on the gpu or not.
+    in1 (no default): The array on which the IFFT is to be performed.
+    is_gpuarray (default=True): Boolean specifier for whether or not input is on the gpu.
+    store_on_gpu (default=False): Boolean specifier for whether the result is to be left on the gpu or not.
 
     OUTPUTS:
-    gpu_out1        (no default):   The gpu array containing the result.
-        OR
-    gpu_out1.get()  (no default):   The result from the gpu array.
+    gpu_out1 (no default): The gpu array containing the result.
+    OR
+    gpu_out1.get() (no default): The result from the gpu array.
     """
 
     if is_gpuarray:
@@ -131,10 +131,10 @@ def pad_array(in1):
     Simple convenience function to pad arrays for linear convolution.
 
     INPUTS:
-    in1     (no default):   Input array which is to be padded.
+    in1 (no default): Input array which is to be padded.
 
     OUTPUTS:
-    out1    (no default):   Padded version of the input.
+    out1 (no default): Padded version of the input.
     """
 
     padded_size = 2*np.array(in1.shape)
@@ -143,4 +143,3 @@ def pad_array(in1):
     out1[padded_size[0]/4:3*padded_size[0]/4,padded_size[1]/4:3*padded_size[1]/4] = in1
 
     return out1
-

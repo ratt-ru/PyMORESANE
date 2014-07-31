@@ -11,7 +11,8 @@ try:
 except:
     print "Pycuda unavailable - GPU mode will fail."
 
-def iuwt_decomposition(in1, scale_count, scale_adjust=0, mode='ser', core_count=2, store_smoothed=False):
+def iuwt_decomposition(in1, scale_count, scale_adjust=0, mode='ser', core_count=2, store_smoothed=False,
+                       store_on_gpu=False):
     """
     This function serves as a handler for the different implementations of the IUWT decomposition. I allows the
     different methods to be used almost interchangeably.
@@ -23,6 +24,7 @@ def iuwt_decomposition(in1, scale_count, scale_adjust=0, mode='ser', core_count=
     mode                (default='ser'):    Implementation of the IUWT to be used.
     core_count          (default=1):        Additional option for multiprocessing - specifies core count.
     store_smoothed      (default=False):    Boolean specifier for whether the smoothed image is stored or not.
+    store_on_gpu        (no default):       Boolean specifier for whether the decomposition is stored on the gpu or not.
 
     OUTPUTS:
     Returns the decomposition.
@@ -33,9 +35,9 @@ def iuwt_decomposition(in1, scale_count, scale_adjust=0, mode='ser', core_count=
     elif mode=='mp':
         return mp_iuwt_decomposition(in1, scale_count, scale_adjust, store_smoothed, core_count)
     elif mode=='gpu':
-        return gpu_iuwt_decomposition(in1, scale_count, scale_adjust, store_smoothed)
+        return gpu_iuwt_decomposition(in1, scale_count, scale_adjust, store_smoothed, store_on_gpu)
 
-def iuwt_recomposition(in1, scale_adjust=0, mode='ser', core_count=1):
+def iuwt_recomposition(in1, scale_adjust=0, mode='ser', core_count=1, store_on_gpu=False):
     """
     This function serves as a handler for the different implementations of the IUWT decomposition. It allows the
     different methods to be used almost interchangeably.
@@ -45,6 +47,7 @@ def iuwt_recomposition(in1, scale_adjust=0, mode='ser', core_count=1):
     scale_adjust        (no default):       Number or omitted scales.
     mode                (default='ser')     Implementation of the IUWT to be used.
     core_count          (default=1)         Additional option for multiprocessing - specifies core count.
+    store_on_gpu        (no default):       Boolean specifier for whether the decomposition is stored on the gpu or not.
 
     OUTPUTS:
     Returns the decomposition.
@@ -55,7 +58,7 @@ def iuwt_recomposition(in1, scale_adjust=0, mode='ser', core_count=1):
     elif mode=='mp':
         return mp_iuwt_recomposition(in1, scale_adjust, core_count)
     elif mode=='gpu':
-        return gpu_iuwt_recomposition(in1, scale_adjust)
+        return gpu_iuwt_recomposition(in1, scale_adjust, store_on_gpu=False)
 
 def ser_iuwt_decomposition(in1, scale_count, scale_adjust, store_smoothed):
     """
@@ -380,61 +383,123 @@ def mp_a_trous_kernel(C0, wavelet_filter, scale, slice_ind, slice_width, r_or_c=
 
         C0[lower_bound:upper_bound,:] = col_conv
 
-def gpu_iuwt_decomposition(in1, scale_count, scale_adjust, store_smoothed):
+def gpu_iuwt_decomposition(in1, scale_count, scale_adjust, store_smoothed, store_on_gpu):
     """
-    This function calls the a trous algorithm code to decompose the input into its wavelet coefficients. This is
-    the isotropic undecimated wavelet transform implemented for GPUs.
+    This function exploits pycuda to implement the IUWT decomposition using kernels executed on the GPU. This version
+    uses the minimum number of memory copies to achieve a substantially accelerated implementation.
 
     INPUTS:
     in1                 (no default):   Array on which the decomposition is to be performed.
     scale_count         (no default):   Maximum scale to be considered.
-    scale_adjust        (default=0):    Adjustment to scale value if first scales are of no interest.
-    store_smoothed      (default=False):Boolean specifier for whether the smoothed image is stored or not.
+    scale_adjust        (no default):   Adjustment to scale value if first scales are of no interest.
+    store_smoothed      (no default):   Boolean specifier for whether the smoothed image is stored or not.
+    store_on_gpu        (no default):   Boolean specifier for whether the decomposition is stored on the gpu or not.
 
     OUTPUTS:
     detail_coeffs       (no default): Array containing the detail coefficients and the smoothed image.
     """
 
+    # The following simple kernel just allows for the construction of a 3D decomposition on the GPU.
+
+    ker = SourceModule("""
+                        __global__ void gpu_store_detail_coeffs(float *in1, float *in2, float* out1, int *scale, int *adjust)
+                        {
+                            const int len = gridDim.x*blockDim.x;
+                            const int i = (blockDim.x * blockIdx.x + threadIdx.x);
+                            const int j = (blockDim.y * blockIdx.y + threadIdx.y)*len;
+                            const int k = (blockDim.z * blockIdx.z + threadIdx.z)*(len*len);
+                            const int tid2 = i + j;
+                            const int tid3 = i + j + k;
+
+                            if ((blockIdx.z + adjust[0])==scale[0])
+                                { out1[tid3] = in1[tid2] - in2[tid2]; }
+
+                        }
+                       """)
+
     wavelet_filter = (1./16)*np.array([1,4,6,4,1], dtype=np.float32)
     wavelet_filter = gpuarray.to_gpu_async(wavelet_filter)
 
-    # Initialises a zero array to store the coefficients.
+    # Initialises an empty array to store the coefficients.
 
-    if store_smoothed:
-        detail_coeffs = np.empty([scale_count-scale_adjust+1, in1.shape[0], in1.shape[1]])
-    else:
-        detail_coeffs = np.empty([scale_count-scale_adjust, in1.shape[0], in1.shape[1]])
+    detail_coeffs = gpuarray.empty([scale_count-scale_adjust, in1.shape[0], in1.shape[1]], np.float32)
 
-    C0 = gpuarray.to_gpu_async(in1.astype(np.float32))                  # Sends the initial value to the GPU.
+    # Sets up some working arrays on the GPU to prevent memory transfers.
+
+    try:
+        gpu_in1 = gpuarray.to_gpu_async(in1.astype(np.float32))
+    except:
+        gpu_in1 = in1
+
+    gpu_tmp = gpuarray.empty_like(gpu_in1)
+    gpu_out1 = gpuarray.empty_like(gpu_in1)
+    gpu_out2 = gpuarray.empty_like(gpu_in1)
+
+    # Sets up some parameters required by the algorithm on the GPU.
+
+    gpu_scale = gpuarray.zeros([1], np.int32)
+    gpu_adjust = gpuarray.zeros([1], np.int32)
+    gpu_adjust += scale_adjust
+
+    # Fetches the a trous kernels and sets up the unique storing kernel.
+
+    gpu_a_trous_row_kernel, gpu_a_trous_col_kernel = gpu_a_trous()
+    gpu_store_detail_coeffs = ker.get_function("gpu_store_detail_coeffs")
+
+    # Functionality for when scale_adjust is non-zero - omits detail coefficient calculation.
 
     if scale_adjust>0:
         for i in range(0, scale_adjust):
-            C = gpu_a_trous(C0, wavelet_filter, i)
-            C0 = C
+            gpu_a_trous_row_kernel(gpu_in1, gpu_tmp, wavelet_filter, gpu_scale,
+                                block=(32,32,1), grid=(in1.shape[1]//32, in1.shape[0]//32))
 
-    # The following loop calculates the detail coefficients using the a trous algorithm for C0 and C. C0 is
-    # reassigned the value of C on each loop - C is the smoothest version of the input image.
+            gpu_a_trous_col_kernel(gpu_tmp, gpu_out1, wavelet_filter, gpu_scale,
+                                block=(32,32,1), grid=(in1.shape[1]//32, in1.shape[0]//32))
 
-    for i in range(scale_adjust,scale_count):
-        C = gpu_a_trous(C0, wavelet_filter, i)                      # Wavelet coefficients.
-        C1 = gpu_a_trous(C, wavelet_filter, i)
-        detail_coeffs[i-scale_adjust,:,:] = (C0 - C1).get_async()   # Calculates and stores the detail coefficients.
-        C0 = C
+            gpu_in1, gpu_out1 = gpu_out1, gpu_in1
+            gpu_scale += 1
 
-    if store_smoothed:
-        detail_coeffs[scale_count-scale_adjust,:,:] = C.get()   # The coeffs at value scale_count are assigned to
-                                                                # the last value of C which corresponds to the
-                                                                # smoothest version of the input image.
-    return detail_coeffs
+    # The meat of the algorithm - two sequential a trous decompositions followed by determination and storing of the
+    # detail coefficients.
 
-def gpu_iuwt_recomposition(in1, scale_adjust):
+    for i in range(scale_adjust, scale_count):
+
+        gpu_a_trous_row_kernel(gpu_in1, gpu_tmp, wavelet_filter, gpu_scale,
+                                block=(32,32,1), grid=(in1.shape[1]//32, in1.shape[0]//32))
+
+        gpu_a_trous_col_kernel(gpu_tmp, gpu_out1, wavelet_filter, gpu_scale,
+                                block=(32,32,1), grid=(in1.shape[1]//32, in1.shape[0]//32))
+
+        gpu_a_trous_row_kernel(gpu_out1, gpu_tmp, wavelet_filter, gpu_scale,
+                                block=(32,32,1), grid=(in1.shape[1]//32, in1.shape[0]//32))
+
+        gpu_a_trous_col_kernel(gpu_tmp, gpu_out2, wavelet_filter, gpu_scale,
+                                block=(32,32,1), grid=(in1.shape[1]//32, in1.shape[0]//32))
+
+        gpu_store_detail_coeffs(gpu_in1, gpu_out2, detail_coeffs, gpu_scale, gpu_adjust,
+                                block=(32,32,1), grid=(in1.shape[1]//32, in1.shape[0]//32, scale_count))
+
+        gpu_in1, gpu_out1 = gpu_out1, gpu_in1
+        gpu_scale += 1
+
+    # Return values depend on mode. NOTE: store_smoothed does not work if the result stays on the gpu.
+
+    if store_on_gpu:
+        return detail_coeffs
+    elif store_smoothed:
+        return detail_coeffs.get(), gpu_out1.get()
+    else:
+        return detail_coeffs.get()
+
+def gpu_iuwt_recomposition(in1, scale_adjust, store_on_gpu):
     """
     This function calls the a trous algorithm code to recompose the input into a single image. This is the
-    multiprocessing implementation of the isotropic undecimated wavelet transform recomposition.
+    GPU implementation of the isotropic undecimated wavelet transform recomposition.
 
     INPUTS:
     in1             (no default):   Array containing wavelet coefficients.
     scale_adjust    (no default):   Indicates the number of truncated array pages.
+    store_on_gpu    (no default):   Boolean specifier for whether the decomposition is stored on the gpu or not.
 
     OUTPUTS:
     recomposiiton   (no default):   Array containing the reconstructed image.
@@ -443,173 +508,142 @@ def gpu_iuwt_recomposition(in1, scale_adjust):
     wavelet_filter = (1./16)*np.array([1,4,6,4,1], dtype=np.float32)
     wavelet_filter = gpuarray.to_gpu_async(wavelet_filter)
 
-    gpu_in1 = gpuarray.to_gpu_async(in1.astype(np.float32))
+    # Determines scale with adjustment and creates a zero array on the GPU for the answer.
 
-    # Following checks that in1 is not simply a single 2D array.
+    max_scale = in1.shape[0] + scale_adjust
+    recomposition = gpuarray.zeros([in1.shape[1], in1.shape[2]], np.float32)
 
-    if len(in1.shape)>2:
-        scale_count = in1.shape[0]
-        recomposition = gpuarray.zeros([in1.shape[1], in1.shape[2]], np.float32)
-    else:
-        scale_count = 1
-        recomposition = gpuarray.zeros([in1.shape[0], in1.shape[1]], np.float32)
+    # Determines whether the array is already on the GPU or not. If not, moves it to the GPU.
 
-    # Maxscale is adjusted by the value of scaleadjust to give its true value.
+    try:
+        gpu_in1 = gpuarray.to_gpu_async(in1.astype(np.float32))
+    except:
+        gpu_in1 = in1
 
-    max_scale = scale_count + scale_adjust
+    # Creates a working array on the GPU.
 
-    # The following loops are calls to the atrous algorithm with the addition of scaladjust to reduce the number of
-    # iterations.
+    gpu_tmp = gpuarray.empty_like(recomposition)
+
+    # Creates and fills an array with the appropriate scale value.
+
+    gpu_scale = gpuarray.zeros([1], np.int32)
+    gpu_scale += max_scale-1
+
+     # Fetches the a trous kernels.
+
+    gpu_a_trous_row_kernel, gpu_a_trous_col_kernel = gpu_a_trous()
+
+    # Performs the recomposition at the scale for which we have explicit information.
 
     for i in range(max_scale-1, scale_adjust-1, -1):
-        recomposition = gpu_a_trous(recomposition, wavelet_filter, i)[:,:] + gpu_in1[i-scale_adjust,:,:]
+        gpu_a_trous_row_kernel(recomposition, gpu_tmp, wavelet_filter, gpu_scale,
+                                block=(32,32,1), grid=(in1.shape[2]//32, in1.shape[1]//32))
+
+        gpu_a_trous_col_kernel(gpu_tmp, recomposition, wavelet_filter, gpu_scale,
+                                block=(32,32,1), grid=(in1.shape[2]//32, in1.shape[1]//32))
+
+        recomposition = recomposition[:,:] + gpu_in1[i-scale_adjust,:,:]
+
+        gpu_scale -= 1
+
+    # In the case of non-zero scale_adjust, completes the recomposition on the omitted scales.
 
     if scale_adjust>0:
         for i in range(scale_adjust-1, -1, -1):
-            recomposition = gpu_a_trous(recomposition, wavelet_filter, i)
+            gpu_a_trous_row_kernel(recomposition, gpu_tmp, wavelet_filter, gpu_scale,
+                                block=(32,32,1), grid=(in1.shape[2]//32, in1.shape[1]//32))
 
-    return recomposition.get()
+            gpu_a_trous_col_kernel(gpu_tmp, recomposition, wavelet_filter, gpu_scale,
+                                block=(32,32,1), grid=(in1.shape[2]//32, in1.shape[1]//32))
 
-def gpu_a_trous(in1, wavelet_filter, scale):
+            gpu_scale -= 1
+
+    # Return values depend on mode.
+
+    if store_on_gpu:
+        return recomposition
+    else:
+        return recomposition.get()
+
+def gpu_a_trous():
     """
-    This function makes use of the GPU and PyCUDA to implement a fast version of the a trous algorithm. May be
-    slow on initial run when kernel compiles.
-
-    INPUTS:
-    in1                 (no default): GPUArray on which the decomposition is to be performed.
-    scale               (no default): Scale of the decomposition.
-    wavelet_filter      (no default): The filter which is applied during the decomposition.
-
-    OUTPUTS:
-    in1_copy            (no default): GPUArray containing the decomposition.
+    Simple convenience function so that the a trous kernels can be easily accessed by any function.
     """
 
     ker1 = SourceModule("""
-                        __global__ void gpu_a_trous_row_kernel(float *out1, float *in1, int *scale, float *wfil)
+                        __global__ void gpu_a_trous_row_kernel(float *in1, float *in2, float *wfil, int *scale)
                         {
-                          const int len = gridDim.y*blockDim.y;
-                          const int i = (blockDim.x * blockIdx.x + threadIdx.x);
-                          const int j = (blockDim.y * blockIdx.y + threadIdx.y)*len;
-                          const int tid = i + j;
-                          int row = tid / len;
+                            const int len = gridDim.x*blockDim.x;
+                            const int col = (blockDim.x * blockIdx.x + threadIdx.x);
+                            const int i = col;
+                            const int row = (blockDim.y * blockIdx.y + threadIdx.y);
+                            const int j = row*len;
+                            const int tid2 = i + j;
+                            const int lstp = exp2(float(scale[0] + 1));
+                            const int sstp = exp2(float(scale[0]));
 
-                          out1[tid] = wfil[2]*in1[tid];
+                            in2[tid2] = wfil[2]*in1[tid2];
 
-                          if (tid < scale[0]*len)
-                            {
-                                out1[tid] += wfil[0]*in1[i + len*(scale[0] - row - 1)];
-                            }
-                          else
-                            {
-                                out1[tid] += wfil[0]*in1[tid - scale[0]*len];
-                            }
+                            if (row < lstp)
+                                { in2[tid2] += wfil[0]*in1[col + len*(lstp - row - 1)]; }
+                            else
+                                { in2[tid2] += wfil[0]*in1[tid2 - lstp*len]; }
 
-                          if (tid < scale[1]*len)
-                            {
-                                out1[tid] += wfil[1]*in1[i + len*(scale[1] - row - 1)];
-                            }
-                          else
-                            {
-                                out1[tid] += wfil[1]*in1[tid - scale[1]*len];
-                            }
+                            if (row < sstp)
+                                { in2[tid2] += wfil[1]*in1[col + len*(sstp - row - 1)]; }
+                            else
+                                { in2[tid2] += wfil[1]*in1[tid2 - sstp*len]; }
 
-                          if (tid >= len*len - scale[1]*len)
-                            {
-                                out1[tid] += wfil[3]*in1[len*(len - (row + scale[1])%(len-1)) + i];
-                            }
-                          else
-                            {
-                                out1[tid] += wfil[3]*in1[tid + scale[1]*len];
-                            }
+                            if (row >= (len - sstp))
+                                { in2[tid2] += wfil[3]*in1[col + len*(2*len - row - sstp - 1)]; }
+                            else
+                                { in2[tid2] += wfil[3]*in1[tid2 + sstp*len]; }
 
-                          if (tid >= len*len - scale[0]*len)
-                            {
-                                out1[tid] += wfil[4]*in1[len*(len - (row + scale[0])%(len-1)) + i];
-                            }
-                          else
-                            {
-                                out1[tid] += wfil[4]*in1[tid + scale[0]*len];
-                            }
-
+                            if (row >= (len - lstp))
+                                { in2[tid2] += wfil[4]*in1[col + len*(2*len - row - lstp - 1)]; }
+                            else
+                                { in2[tid2] += wfil[4]*in1[tid2 + lstp*len]; }
                         }
-                       """)
+                        """)
 
     ker2 = SourceModule("""
-                        __global__ void gpu_a_trous_col_kernel(float *out1, float *in1, int *scale, float *wfil)
+                        __global__ void gpu_a_trous_col_kernel(float *in1, float *in2, float *wfil, int *scale)
                         {
-                          const int i = (blockDim.x * blockIdx.x + threadIdx.x);
-                          const int j = (blockDim.y * blockIdx.y + threadIdx.y)*gridDim.y*blockDim.y;
-                          const int tid = i + j;
-                          const int len = gridDim.x*blockDim.x;
-                          int col = 0;
+                            const int len = gridDim.x*blockDim.x;
+                            const int col = (blockDim.x * blockIdx.x + threadIdx.x);
+                            const int i = col;
+                            const int row = (blockDim.y * blockIdx.y + threadIdx.y);
+                            const int j = row*len;
+                            const int tid2 = i + j;
+                            const int lstp = exp2(float(scale[0] + 1));
+                            const int sstp = exp2(float(scale[0]));
 
-                          out1[tid] = wfil[2]*in1[tid];
+                            in2[tid2] = wfil[2]*in1[tid2];
 
-                          if (i < scale[0])
-                            {
-                                out1[tid] += wfil[0]*in1[j - (i - (scale[0] - 1))];
-                            }
-                          else
-                            {
-                                out1[tid] += wfil[0]*in1[tid - scale[0]];
-                            }
+                            if (col < lstp)
+                                { in2[tid2] += wfil[0]*in1[j - col + lstp - 1]; }
+                            else
+                                { in2[tid2] += wfil[0]*in1[tid2 - lstp]; }
 
-                          if (i < scale[1])
-                            {
-                                out1[tid] += wfil[1]*in1[j - (i - (scale[1] - 1))];
-                            }
-                          else
-                            {
-                                out1[tid] += wfil[1]*in1[tid - scale[1]];
-                            }
+                            if (col < sstp)
+                                { in2[tid2] += wfil[1]*in1[j - col + sstp - 1]; }
+                            else
+                                { in2[tid2] += wfil[1]*in1[tid2 - sstp]; }
 
-                          if (j==0)
-                            {
-                                col = tid - len;
-                            }
-                          else
-                            {
-                                col = (tid % j) - len;
-                            }
+                            if (col >= (len - sstp))
+                                { in2[tid2] += wfil[3]*in1[j + 2*len - sstp - col - 1]; }
+                            else
+                                { in2[tid2] += wfil[3]*in1[tid2 + sstp]; }
 
-                          if (col >= -scale[1])
-                            {
-                                out1[tid] += wfil[3]*in1[j + len - (col + scale[1] + 1)];
-                            }
-                          else
-                            {
-                                out1[tid] += wfil[3]*in1[tid + scale[1]];
-                            }
-
-                          if (col >= -scale[0])
-                            {
-                                out1[tid] += wfil[4]*in1[j + len - (col + scale[0] + 1)];
-                            }
-                          else
-                            {
-                                out1[tid] += wfil[4]*in1[tid + scale[0]];
-                            }
+                            if (col >= (len - lstp))
+                                { in2[tid2] += wfil[4]*in1[j + 2*len - lstp - col - 1]; }
+                            else
+                                { in2[tid2] += wfil[4]*in1[tid2 + lstp]; }
 
                         }
                        """)
 
-    scale = np.array([2**(scale+1), 2**scale], dtype=np.int32)
-    scale = gpuarray.to_gpu_async(scale)
-
-    in1_copy = in1.copy()                   # A copy is used as to preserve the existing values.
-    out1 = gpuarray.empty_like(in1_copy)
-
-    gpu_a_trous_row_kernel = ker1.get_function("gpu_a_trous_row_kernel")
-
-    gpu_a_trous_row_kernel(out1, in1_copy, scale, wavelet_filter,
-                       block=(32,32,1), grid=(in1.shape[0]//32, in1.shape[1]//32))
-
-    gpu_a_trous_col_kernel = ker2.get_function("gpu_a_trous_col_kernel")
-
-    gpu_a_trous_col_kernel(in1_copy, out1, scale, wavelet_filter,
-                       block=(32,32,1), grid=(in1.shape[0]//32, in1.shape[1]//32))
-
-    return in1_copy
+    return ker1.get_function("gpu_a_trous_row_kernel"), ker2.get_function("gpu_a_trous_col_kernel")
 
 # if __name__ == "__main__":
 #     test = np.random.randn(512,512).astype(np.float32)

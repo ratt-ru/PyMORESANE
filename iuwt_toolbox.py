@@ -171,9 +171,9 @@ def gpu_source_extraction(in1, tolerance):
     # The following initialises some variables for storing the labelled image and the number of labels. The per scale
     # maxima are also initialised here.
 
-    scale_maxima = np.empty([in1.shape[0],1])
-    objects = np.empty_like(in1, dtype=int)
-    object_count = np.empty([in1.shape[0],1], dtype=int)
+    scale_maxima = np.empty([in1.shape[0],1], dtype=np.float32)
+    objects = np.empty_like(in1, dtype=np.int32)
+    object_count = np.empty([in1.shape[0],1], dtype=np.int32)
 
     # The following loop uses functionality from the ndimage module to assess connectivity. The maxima are also
     # calculated here.
@@ -219,25 +219,9 @@ def snr_ratio(in1, in2):
     out1        (no default):   The ratio of the signal to noise ratios of two signals.
     """
 
-    out1 = 20*np.log10(np.linalg.norm(in1)/np.linalg.norm(in1-in2))
+    out1 = 20*(np.log10(np.linalg.norm(in1)/np.linalg.norm(in1-in2)))
 
     return out1
-
-def conjugate_gradient_descent(in1, max_iter):
-    """
-    STUFF
-    """
-
-    r = in1.copy()
-    p = in1.copy()
-    iter = 0
-
-    while (iter<max_iter):
-        alpha_numerator = (np.dot(r.reshape(1,-1),r.reshape(-1,1))[0,0])
-        alpha_denominator = p.reshape[1,-1]
-        break
-
-
 
 if __name__=="__main__":
     img_hdu_list = pyfits.open("3C147.fits")
@@ -249,7 +233,6 @@ if __name__=="__main__":
     img_hdu_list.close()
     psf_hdu_list.close()
 
-    conjugate_gradient_descent(dirty_data,1)
     # np.array([[1],[2],[3]])
 
     # decomposition = iuwt.iuwt_decomposition(dirty_data,3)
