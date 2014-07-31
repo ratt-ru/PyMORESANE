@@ -13,8 +13,8 @@ except:
 
 def gpu_iuwt_decomposition(in1, scale_count, scale_adjust, store_smoothed, store_on_gpu):
     """
-    This function calls the a trous algorithm code to decompose the input into its wavelet coefficients. This is
-    the isotropic undecimated wavelet transform implemented for GPUs.
+    This function exploits pycuda to implement the IUWT decomposition using kernels executed on the GPU. This version
+    uses the minimum number of memory copies to achieve a substantially accelerated implementation.
 
     INPUTS:
     in1                 (no default):   Array on which the decomposition is to be performed.
@@ -27,7 +27,7 @@ def gpu_iuwt_decomposition(in1, scale_count, scale_adjust, store_smoothed, store
     detail_coeffs       (no default): Array containing the detail coefficients and the smoothed image.
     """
 
-    # The following simple kernel just allows for the construction of a 3D composition on the GPU.
+    # The following simple kernel just allows for the construction of a 3D decomposition on the GPU.
 
     ker = SourceModule("""
                         __global__ void gpu_store_detail_coeffs(float *in1, float *in2, float* out1, int *scale, int *adjust)
@@ -194,6 +194,9 @@ def gpu_iuwt_recomposition(in1, scale_adjust, store_on_gpu):
         return recomposition.get()
 
 def gpu_a_trous():
+    """
+    Simple convenience function so that the a trous kernels can be easily accessed by any function.
+    """
 
     ker1 = SourceModule("""
                         __global__ void gpu_a_trous_row_kernel(float *in1, float *in2, float *wfil, int *scale)
@@ -272,20 +275,20 @@ def gpu_a_trous():
 
 if __name__=="__main__":
     test = np.random.randn(4096,4096).astype(np.float32)
-    gpu_test = gpuarray.to_gpu_async(test)
+    gpu_test = gpuarray.to_gpu(test)
 
     for i in range(5):
         t = time.time()
-        example = iuwt.iuwt_decomposition(test, 11, 0, mode='gpu')
+        example = iuwt.iuwt_decomposition(test, 5, 0, mode='gpu')
         example = iuwt.iuwt_recomposition(example, 0, mode='gpu')
         print time.time() - t
 
     for i in range(5):
         t = time.time()
-        result = gpu_iuwt_decomposition(test, 11, 0, False, True)
+        result = gpu_iuwt_decomposition(gpu_test, 5, 0, False, True)
         result = gpu_iuwt_recomposition(result, 0, False)
         print time.time() - t
-        gpu_test = gpuarray.to_gpu_async(test)
+        gpu_test = gpuarray.to_gpu(test)
 
     print np.allclose(result ,example)
     print np.where(result!=example)
