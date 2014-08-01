@@ -139,9 +139,7 @@ def gpu_source_extraction(in1, tolerance):
                           const int tid = i + j;
 
                           if (in1[tid] == in2[0])
-                            {
-                                in1[tid] = -1;
-                            }
+                            { in1[tid] = -1; }
                         }
                        """)
 
@@ -153,13 +151,9 @@ def gpu_source_extraction(in1, tolerance):
                           const int tid = i + j;
 
                           if (in1[tid] >= 0)
-                            {
-                                in1[tid] = 0;
-                            }
+                            { in1[tid] = 0; }
                           else
-                            {
-                                in1[tid] = 1;
-                            }
+                            { in1[tid] = 1; }
                         }
                        """)
 
@@ -205,7 +199,7 @@ def gpu_source_extraction(in1, tolerance):
 
         objects[i,:,:] = gpu_objects.get()
 
-    return objects*in1, objects
+    return (objects*in1).astype(np.float32), objects
 
 def snr_ratio(in1, in2):
     """

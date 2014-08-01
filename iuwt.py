@@ -477,7 +477,7 @@ def gpu_iuwt_decomposition(in1, scale_count, scale_adjust, store_smoothed, store
                                 block=(32,32,1), grid=(in1.shape[1]//32, in1.shape[0]//32))
 
         gpu_store_detail_coeffs(gpu_in1, gpu_out2, detail_coeffs, gpu_scale, gpu_adjust,
-                                block=(32,32,1), grid=(in1.shape[1]//32, in1.shape[0]//32, scale_count))
+                                block=(32,32,1), grid=(in1.shape[1]//32, in1.shape[0]//32, int(scale_count)))
 
         gpu_in1, gpu_out1 = gpu_out1, gpu_in1
         gpu_scale += 1

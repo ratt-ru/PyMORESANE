@@ -196,7 +196,7 @@ class FitsImage:
                 # The following stores the index, scale and value of the global maximum coefficient.
 
                 max_index = np.argmax(normalised_scale_maxima[min_scale:,:,:]) + min_scale
-                max_scale = int(max_index + 1)
+                max_scale = max_index + 1
                 max_coeff = normalised_scale_maxima[max_index,0,0]
 
                 # This is an escape condition for the loop. If the maximum coefficient is zero, then there is no
@@ -241,8 +241,6 @@ class FitsImage:
                 extracted_sources, extracted_sources_mask = \
                     tools.source_extraction(dirty_decomposition_thresh_slice, tolerance, mode=extraction_mode)
 
-                extracted_sources = extracted_sources.astype(np.float32)
-
                 # The wavelet coefficients of the extracted sources are recomposed into a single image,
                 # which should contain only the structures of interest.
 
@@ -276,8 +274,6 @@ class FitsImage:
                     alpha = alpha_numerator/alpha_denominator
 
                     xn = x + alpha*p
-
-                    print alpha
 
                     # The following enforces the positivity constraint which necessitates some recalculation.
 
