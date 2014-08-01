@@ -1,15 +1,18 @@
 import numpy as np
 
 try:
+    import pycuda.driver as drv
+    import pycuda.tools
     import pycuda.autoinit
     import pycuda.gpuarray as gpuarray
+    from pycuda.compiler import SourceModule
     from scikits.cuda.fft import Plan
     from scikits.cuda.fft import fft
     from scikits.cuda.fft import ifft
 except:
     print "Pycuda unavailable - GPU mode will fail."
 
-def fft_convolve(in1, in2, conv_device='cpu', conv_mode="linear"):
+def fft_convolve(in1, in2, conv_device='cpu', conv_mode="linear", store_on_gpu=False):
     """
     This function determines the convolution of two inputs using the FFT. Contains an implementation for both CPU
     and GPU.
@@ -34,11 +37,11 @@ def fft_convolve(in1, in2, conv_device='cpu', conv_mode="linear"):
 
             conv_in1_in2 = fft_in1*fft_in2
 
-            conv_in1_in2 = gpu_c2r_ifft(conv_in1_in2, is_gpuarray=True)
+            conv_in1_in2 = fft_shift(gpu_c2r_ifft(conv_in1_in2, is_gpuarray=True, store_on_gpu=True)).get()
 
             out1_slice = tuple(slice(0.5*sz,1.5*sz) for sz in in1.shape)
 
-            return np.require(np.fft.fftshift(conv_in1_in2)[out1_slice], np.float32, 'C')
+            return np.require(conv_in1_in2[out1_slice], np.float32, 'C')
 
         elif conv_mode=="circular":
             fft_in1 = gpu_r2c_fft(in1, store_on_gpu=True)
@@ -46,9 +49,9 @@ def fft_convolve(in1, in2, conv_device='cpu', conv_mode="linear"):
 
             conv_in1_in2 = fft_in1*fft_in2
 
-            conv_in1_in2 = gpu_c2r_ifft(conv_in1_in2, is_gpuarray=True)
+            conv_in1_in2 = fft_shift(gpu_c2r_ifft(conv_in1_in2, is_gpuarray=True, store_on_gpu=True)).get()
 
-            return np.fft.fftshift(conv_in1_in2)
+            return conv_in1_in2
     else:
 
         if conv_mode=="linear":
@@ -143,3 +146,36 @@ def pad_array(in1):
     out1[padded_size[0]/4:3*padded_size[0]/4,padded_size[1]/4:3*padded_size[1]/4] = in1
 
     return out1
+
+def fft_shift(in1):
+
+    ker = SourceModule("""
+                        __global__ void fft_shift_ker(float *in1)
+                        {
+                            const int len = gridDim.x*blockDim.x;
+                            const int col = (blockDim.x * blockIdx.x + threadIdx.x);
+                            const int row = (blockDim.y * blockIdx.y + threadIdx.y);
+                            const int tid2 = col + len*row;
+                            float tmp = 0;
+
+                            if ((col<(len/2))&(row<(len/2)))
+                                {
+                                    tmp = in1[tid2];
+                                    in1[tid2] = in1[(len/2)*(len + 1) + tid2];
+                                    in1[(len/2)*(len + 1) + tid2] = tmp;
+                                }
+
+                            if ((col>=(len/2))&(row<(len/2)))
+                                {
+                                    tmp = in1[tid2];
+                                    in1[tid2] = in1[(len/2)*(len - 1) + tid2];
+                                    in1[(len/2)*(len - 1) + tid2] = tmp;
+                                }
+
+                        }
+                       """)
+
+    fft_shift_ker = ker.get_function("fft_shift_ker")
+    fft_shift_ker(in1, block=(32,32,1), grid=(int(in1.shape[1]//32), int(in1.shape[0]//32)))
+
+    return in1

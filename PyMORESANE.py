@@ -82,6 +82,14 @@ class FitsImage:
             scale_count = int(np.log2(self.dirty_data_shape[0])-1)
             logger.info("Assuming maximum scale is {}.".format(scale_count))
 
+        if (decom_mode=='gpu')&(conv_device=='gpu')&(extraction_mode=='gpu'):
+            # all_on_gpu = True
+            print "Reactivate condition."
+        else:
+            all_on_gpu = False
+
+        all_on_gpu = False
+
         # The following creates arrays with dimensions equal to subregion and containing the values of the dirty
         # image and psf in their central subregions.
 
@@ -231,7 +239,7 @@ class FitsImage:
                 # We choose to only consider scales up to the scale containing the maximum wavelet coefficient,
                 # and ignore scales at or below the scale adjustment.
 
-                dirty_decomposition_thresh_slice = dirty_decomposition_thresh[scale_adjust:max_scale,:,:]
+                thresh_slice = dirty_decomposition_thresh[scale_adjust:max_scale,:,:]
 
                 # The following is a call to the externally defined source extraction function. It returns an array
                 # populated with the wavelet coefficients of structures of interest in the image. This basically refers
@@ -239,7 +247,7 @@ class FitsImage:
                 # maximum  at that scale.
 
                 extracted_sources, extracted_sources_mask = \
-                    tools.source_extraction(dirty_decomposition_thresh_slice, tolerance, mode=extraction_mode)
+                    tools.source_extraction(thresh_slice, tolerance, mode=extraction_mode, store_on_gpu=all_on_gpu)
 
                 # The wavelet coefficients of the extracted sources are recomposed into a single image,
                 # which should contain only the structures of interest.
@@ -265,7 +273,8 @@ class FitsImage:
                 while (minor_loop_niter<minor_loop_miter):
 
                     Ap = conv.fft_convolve(p, psf_subregion_fft, conv_device, conv_mode)
-                    Ap = iuwt.iuwt_decomposition(Ap, max_scale, scale_adjust, decom_mode, core_count)
+                    Ap = iuwt.iuwt_decomposition(Ap, max_scale, scale_adjust, decom_mode, core_count,
+                                                 store_on_gpu=all_on_gpu)
                     Ap = extracted_sources_mask*Ap
                     Ap = iuwt.iuwt_recomposition(Ap, scale_adjust, decom_mode, core_count)
 
@@ -283,7 +292,8 @@ class FitsImage:
                         p = (xn-x)/alpha
 
                         Ap = conv.fft_convolve(p, psf_subregion_fft, conv_device, conv_mode)
-                        Ap = iuwt.iuwt_decomposition(Ap, max_scale, scale_adjust, decom_mode, core_count)
+                        Ap = iuwt.iuwt_decomposition(Ap, max_scale, scale_adjust, decom_mode, core_count,
+                                                     store_on_gpu=all_on_gpu)
                         Ap = extracted_sources_mask*Ap
                         Ap = iuwt.iuwt_recomposition(Ap, scale_adjust, decom_mode, core_count)
 
@@ -296,7 +306,8 @@ class FitsImage:
                     p = rn + beta*p
 
                     model_sources = conv.fft_convolve(xn, psf_subregion_fft, conv_device, conv_mode)
-                    model_sources = iuwt.iuwt_decomposition(model_sources, max_scale, scale_adjust, decom_mode, core_count)
+                    model_sources = iuwt.iuwt_decomposition(model_sources, max_scale, scale_adjust, decom_mode,
+                                                            core_count, store_on_gpu=all_on_gpu)
                     model_sources = extracted_sources_mask*model_sources
 
                     # We compare our model to the sources extracted from the data.
