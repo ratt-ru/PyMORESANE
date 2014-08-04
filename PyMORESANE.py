@@ -6,6 +6,7 @@ import iuwt_convolution as conv
 import iuwt_toolbox as tools
 import argparse
 
+import pylab as pb
 import time
 
 class FitsImage:
@@ -84,7 +85,7 @@ class FitsImage:
 
         if (decom_mode=='gpu')&(conv_device=='gpu')&(extraction_mode=='gpu'):
             # all_on_gpu = True
-            print "Reactivate condition."
+            print "bleh"
         else:
             all_on_gpu = False
 
@@ -252,8 +253,7 @@ class FitsImage:
                 # The wavelet coefficients of the extracted sources are recomposed into a single image,
                 # which should contain only the structures of interest.
 
-                recomposed_sources = \
-                    iuwt.iuwt_recomposition(extracted_sources, scale_adjust, decom_mode, core_count)
+                recomposed_sources = iuwt.iuwt_recomposition(extracted_sources, scale_adjust, decom_mode, core_count)
 
 ######################################################MINOR LOOP######################################################
 
@@ -272,7 +272,7 @@ class FitsImage:
 
                 while (minor_loop_niter<minor_loop_miter):
 
-                    Ap = conv.fft_convolve(p, psf_subregion_fft, conv_device, conv_mode)
+                    Ap = conv.fft_convolve(p, psf_subregion_fft, conv_device, conv_mode, store_on_gpu=all_on_gpu)
                     Ap = iuwt.iuwt_decomposition(Ap, max_scale, scale_adjust, decom_mode, core_count,
                                                  store_on_gpu=all_on_gpu)
                     Ap = extracted_sources_mask*Ap
@@ -291,7 +291,7 @@ class FitsImage:
                         xn[xn<0] = 0
                         p = (xn-x)/alpha
 
-                        Ap = conv.fft_convolve(p, psf_subregion_fft, conv_device, conv_mode)
+                        Ap = conv.fft_convolve(p, psf_subregion_fft, conv_device, conv_mode, store_on_gpu=all_on_gpu)
                         Ap = iuwt.iuwt_decomposition(Ap, max_scale, scale_adjust, decom_mode, core_count,
                                                      store_on_gpu=all_on_gpu)
                         Ap = extracted_sources_mask*Ap
@@ -305,10 +305,13 @@ class FitsImage:
 
                     p = rn + beta*p
 
-                    model_sources = conv.fft_convolve(xn, psf_subregion_fft, conv_device, conv_mode)
+                    model_sources = conv.fft_convolve(xn, psf_subregion_fft, conv_device, conv_mode, store_on_gpu=all_on_gpu)
                     model_sources = iuwt.iuwt_decomposition(model_sources, max_scale, scale_adjust, decom_mode,
                                                             core_count, store_on_gpu=all_on_gpu)
                     model_sources = extracted_sources_mask*model_sources
+
+                    if all_on_gpu:
+                        model_sources = model_sources.get()
 
                     # We compare our model to the sources extracted from the data.
 
@@ -333,7 +336,7 @@ class FitsImage:
                         min_scale = 0
                         break
 
-                    if (minor_loop_niter>1)&(snr_current<snr_last):
+                    if (minor_loop_niter>1)&(snr_current<=snr_last):
                         if (snr_current>10.5):
                             logger.info("SNR has decreased - Model has reached ~{}% error - exiting minor loop."\
                                     .format(int(100/np.power(10,snr_current/20))))
@@ -513,7 +516,7 @@ if __name__ == "__main__":
     # test.moresane(scale_count = 9, major_loop_miter=100, minor_loop_miter=30, tolerance=0.8, \
     #                 conv_mode="linear", accuracy=1e-6, loop_gain=0.2, enforce_positivity=True, sigma_level=5,
     #                 decom_mode="gpu", extraction_mode="gpu", conv_device="gpu")
-    test.moresane_by_scale(major_loop_miter=100, minor_loop_miter=50, tolerance=0.80,
+    test.moresane_by_scale(subregion=512, major_loop_miter=100, minor_loop_miter=50, tolerance=0.80,
                     conv_mode="linear", accuracy=1e-6, loop_gain=0.3, enforce_positivity=True, sigma_level=4,
                     decom_mode="gpu", extraction_mode="gpu", conv_device="gpu")
     # test.moresane_by_scale(subregion=512, major_loop_miter=100, minor_loop_miter=25, tolerance=0.85,

@@ -446,15 +446,18 @@ def gpu_iuwt_decomposition(in1, scale_count, scale_adjust, store_smoothed, store
     gpu_a_trous_row_kernel, gpu_a_trous_col_kernel = gpu_a_trous()
     gpu_store_detail_coeffs = ker.get_function("gpu_store_detail_coeffs")
 
+    grid_rows = int(in1.shape[0]//32)
+    grid_cols = int(in1.shape[1]//32)
+
     # Functionality for when scale_adjust is non-zero - omits detail coefficient calculation.
 
     if scale_adjust>0:
         for i in range(0, scale_adjust):
             gpu_a_trous_row_kernel(gpu_in1, gpu_tmp, wavelet_filter, gpu_scale,
-                                block=(32,32,1), grid=(in1.shape[1]//32, in1.shape[0]//32))
+                                block=(32,32,1), grid=(grid_cols, grid_rows))
 
             gpu_a_trous_col_kernel(gpu_tmp, gpu_out1, wavelet_filter, gpu_scale,
-                                block=(32,32,1), grid=(in1.shape[1]//32, in1.shape[0]//32))
+                                block=(32,32,1), grid=(grid_cols, grid_rows))
 
             gpu_in1, gpu_out1 = gpu_out1, gpu_in1
             gpu_scale += 1
@@ -465,19 +468,19 @@ def gpu_iuwt_decomposition(in1, scale_count, scale_adjust, store_smoothed, store
     for i in range(scale_adjust, scale_count):
 
         gpu_a_trous_row_kernel(gpu_in1, gpu_tmp, wavelet_filter, gpu_scale,
-                                block=(32,32,1), grid=(in1.shape[1]//32, in1.shape[0]//32))
+                                block=(32,32,1), grid=(grid_cols, grid_rows))
 
         gpu_a_trous_col_kernel(gpu_tmp, gpu_out1, wavelet_filter, gpu_scale,
-                                block=(32,32,1), grid=(in1.shape[1]//32, in1.shape[0]//32))
+                                block=(32,32,1), grid=(grid_cols, grid_rows))
 
         gpu_a_trous_row_kernel(gpu_out1, gpu_tmp, wavelet_filter, gpu_scale,
-                                block=(32,32,1), grid=(in1.shape[1]//32, in1.shape[0]//32))
+                                block=(32,32,1), grid=(grid_cols, grid_rows))
 
         gpu_a_trous_col_kernel(gpu_tmp, gpu_out2, wavelet_filter, gpu_scale,
-                                block=(32,32,1), grid=(in1.shape[1]//32, in1.shape[0]//32))
+                                block=(32,32,1), grid=(grid_cols, grid_rows))
 
         gpu_store_detail_coeffs(gpu_in1, gpu_out2, detail_coeffs, gpu_scale, gpu_adjust,
-                                block=(32,32,1), grid=(in1.shape[1]//32, in1.shape[0]//32, int(scale_count)))
+                                block=(32,32,1), grid=(grid_cols, grid_rows, int(scale_count)))
 
         gpu_in1, gpu_out1 = gpu_out1, gpu_in1
         gpu_scale += 1
@@ -533,14 +536,17 @@ def gpu_iuwt_recomposition(in1, scale_adjust, store_on_gpu):
 
     gpu_a_trous_row_kernel, gpu_a_trous_col_kernel = gpu_a_trous()
 
+    grid_rows = int(in1.shape[1]//32)
+    grid_cols = int(in1.shape[2]//32)
+
     # Performs the recomposition at the scale for which we have explicit information.
 
     for i in range(max_scale-1, scale_adjust-1, -1):
         gpu_a_trous_row_kernel(recomposition, gpu_tmp, wavelet_filter, gpu_scale,
-                                block=(32,32,1), grid=(in1.shape[2]//32, in1.shape[1]//32))
+                                block=(32,32,1), grid=(grid_cols, grid_rows))
 
         gpu_a_trous_col_kernel(gpu_tmp, recomposition, wavelet_filter, gpu_scale,
-                                block=(32,32,1), grid=(in1.shape[2]//32, in1.shape[1]//32))
+                                block=(32,32,1), grid=(grid_cols, grid_rows))
 
         recomposition = recomposition[:,:] + gpu_in1[i-scale_adjust,:,:]
 
@@ -551,10 +557,10 @@ def gpu_iuwt_recomposition(in1, scale_adjust, store_on_gpu):
     if scale_adjust>0:
         for i in range(scale_adjust-1, -1, -1):
             gpu_a_trous_row_kernel(recomposition, gpu_tmp, wavelet_filter, gpu_scale,
-                                block=(32,32,1), grid=(in1.shape[2]//32, in1.shape[1]//32))
+                                block=(32,32,1), grid=(grid_cols, grid_rows))
 
             gpu_a_trous_col_kernel(gpu_tmp, recomposition, wavelet_filter, gpu_scale,
-                                block=(32,32,1), grid=(in1.shape[2]//32, in1.shape[1]//32))
+                                block=(32,32,1), grid=(grid_cols, grid_rows))
 
             gpu_scale -= 1
 
@@ -645,12 +651,21 @@ def gpu_a_trous():
 
     return ker1.get_function("gpu_a_trous_row_kernel"), ker2.get_function("gpu_a_trous_col_kernel")
 
-# if __name__ == "__main__":
-#     test = np.random.randn(512,512).astype(np.float32)
-#     result1 = iuwt_decomposition(test, 4, scale_adjust=2, mode="mp", store_smoothed=True)
-#
-#     result2 = iuwt_decomposition(test, 4, scale_adjust=2, mode="mp")
-#
-#     print np.max(result2-result1[:2,:,:])
-#     print result1.shape
-#     print result2.shape
+if __name__ == "__main__":
+    test = np.random.randn(512,512).astype(np.float32)+1
+    result1 = iuwt_decomposition(test, 4, scale_adjust=2, mode="gpu")
+
+    result2 = iuwt_decomposition(test, 4, scale_adjust=2, mode="gpu")
+
+    result1 = iuwt_recomposition(result1.astype(np.float32), 2, 'ser')
+    result2 = iuwt_recomposition(result2.astype(np.float32), 2, 'gpu')
+
+    import pylab as pb
+    pb.imshow(np.abs(result1-result2))
+    pb.show()
+    print np.max(np.abs(result1-result2))
+    print np.average(np.abs(result1-result2))
+    print np.average(np.abs(result1))
+
+
+
