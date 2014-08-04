@@ -37,11 +37,12 @@ def fft_convolve(in1, in2, conv_device='cpu', conv_mode="linear", store_on_gpu=F
 
             conv_in1_in2 = fft_in1*fft_in2
 
-            conv_in1_in2 = fft_shift(gpu_c2r_ifft(conv_in1_in2, is_gpuarray=True, store_on_gpu=True)).get()
+            conv_in1_in2 = contiguous_slice(fft_shift(gpu_c2r_ifft(conv_in1_in2, is_gpuarray=True, store_on_gpu=True)))
 
-            out1_slice = tuple(slice(0.5*sz,1.5*sz) for sz in in1.shape)
-
-            return np.require(conv_in1_in2[out1_slice], np.float32, 'C')
+            if store_on_gpu:
+                return conv_in1_in2
+            else:
+                return conv_in1_in2.get()
 
         elif conv_mode=="circular":
             fft_in1 = gpu_r2c_fft(in1, store_on_gpu=True)
@@ -49,9 +50,12 @@ def fft_convolve(in1, in2, conv_device='cpu', conv_mode="linear", store_on_gpu=F
 
             conv_in1_in2 = fft_in1*fft_in2
 
-            conv_in1_in2 = fft_shift(gpu_c2r_ifft(conv_in1_in2, is_gpuarray=True, store_on_gpu=True)).get()
+            conv_in1_in2 = fft_shift(gpu_c2r_ifft(conv_in1_in2, is_gpuarray=True, store_on_gpu=True))
 
-            return conv_in1_in2
+            if store_on_gpu:
+                return conv_in1_in2
+            else:
+                return conv_in1_in2.get()
     else:
 
         if conv_mode=="linear":
@@ -179,3 +183,31 @@ def fft_shift(in1):
     fft_shift_ker(in1, block=(32,32,1), grid=(int(in1.shape[1]//32), int(in1.shape[0]//32)))
 
     return in1
+
+def contiguous_slice(in1):
+
+    ker = SourceModule("""
+                        __global__ void contiguous_slice_ker(float *in1, float *out1)
+                        {
+                            const int len = gridDim.x*blockDim.x;
+                            const int col = (blockDim.x * blockIdx.x + threadIdx.x);
+                            const int row = (blockDim.y * blockIdx.y + threadIdx.y);
+                            const int tid2 = col + len*row;
+
+                            const int first_idx = len/4;
+                            const int last_idx = (3*len)/4;
+
+                            const int out_idx = (col-first_idx)+(row-first_idx)*(len/2);
+
+                            if (((col>=first_idx)&(row>=first_idx))&((col<last_idx)&(row<last_idx)))
+                                { out1[out_idx] = in1[tid2]; }
+
+                        }
+                       """)
+
+    gpu_out1 = gpuarray.empty([in1.shape[0]/2,in1.shape[1]/2], np.float32)
+
+    contiguous_slice_ker = ker.get_function("contiguous_slice_ker")
+    contiguous_slice_ker(in1, gpu_out1, block=(32,32,1), grid=(int(in1.shape[1]//32), int(in1.shape[0]//32)))
+
+    return gpu_out1
