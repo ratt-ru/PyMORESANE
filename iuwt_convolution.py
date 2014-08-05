@@ -152,6 +152,12 @@ def pad_array(in1):
     return out1
 
 def fft_shift(in1):
+    """
+    This function performs the FFT shift operation to restore the correct output shape.
+
+    INPUTS:
+    in1 (no default): Array containing data which has been FFTed and IFFTed.
+    """
 
     ker = SourceModule("""
                         __global__ void fft_shift_ker(float *in1)
@@ -185,6 +191,12 @@ def fft_shift(in1):
     return in1
 
 def contiguous_slice(in1):
+    """
+    This function unpads an array in such a way as to make it contiguous.
+
+    INPUTS:
+    in1 (no default): Array containing data which has been padded.
+    """
 
     ker = SourceModule("""
                         __global__ void contiguous_slice_ker(float *in1, float *out1)

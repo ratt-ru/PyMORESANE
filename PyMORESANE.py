@@ -84,12 +84,9 @@ class FitsImage:
             logger.info("Assuming maximum scale is {}.".format(scale_count))
 
         if (decom_mode=='gpu')&(conv_device=='gpu')&(extraction_mode=='gpu'):
-            # all_on_gpu = True
-            print "bleh"
+            all_on_gpu = True
         else:
             all_on_gpu = False
-
-        all_on_gpu = False
 
         # The following creates arrays with dimensions equal to subregion and containing the values of the dirty
         # image and psf in their central subregions.
@@ -464,7 +461,7 @@ class FitsImage:
 
             self.dirty_data = self.residual
 
-            scale_count +=  1
+            scale_count += 1
 
             if (scale_count>(np.log2(self.dirty_data.shape[0]))-1):
                 logger.info("Maximum scale reached - finished.")
@@ -509,15 +506,15 @@ if __name__ == "__main__":
 
     logger.info("Starting...")
 
-    # test = FitsImage("3C147.fits","3C147_PSF.fits")
-    test = FitsImage("DIRTY.fits","PSF.fits")
+    test = FitsImage("3C147.fits","3C147_PSF.fits")
+    # test = FitsImage("DIRTY.fits","PSF.fits")
 
     start_time = time.time()
     # test.moresane(scale_count = 9, major_loop_miter=100, minor_loop_miter=30, tolerance=0.8, \
     #                 conv_mode="linear", accuracy=1e-6, loop_gain=0.2, enforce_positivity=True, sigma_level=5,
     #                 decom_mode="gpu", extraction_mode="gpu", conv_device="gpu")
-    test.moresane_by_scale(subregion=512, major_loop_miter=100, minor_loop_miter=50, tolerance=0.80,
-                    conv_mode="linear", accuracy=1e-6, loop_gain=0.3, enforce_positivity=True, sigma_level=4,
+    test.moresane_by_scale(major_loop_miter=100, minor_loop_miter=50, tolerance=0.80,
+                    conv_mode="circular", accuracy=1e-6, loop_gain=0.2, enforce_positivity=False, sigma_level=4,
                     decom_mode="gpu", extraction_mode="gpu", conv_device="gpu")
     # test.moresane_by_scale(subregion=512, major_loop_miter=100, minor_loop_miter=25, tolerance=0.85,
     #                 conv_mode="circular", accuracy=1e-6, loop_gain=0.3, enforce_positivity=True, sigma_level=5)

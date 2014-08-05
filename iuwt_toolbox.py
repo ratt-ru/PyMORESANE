@@ -161,7 +161,7 @@ def gpu_source_extraction(in1, tolerance, store_on_gpu):
                        """)
 
     ker3 = SourceModule("""
-                        __global__ void gpu_store_objects(int *in1, int *out1, int *scale)
+                        __global__ void gpu_store_objects(int *in1, float *out1, int *scale)
                         {
                             const int len = gridDim.x*blockDim.x;
                             const int i = (blockDim.x * blockIdx.x + threadIdx.x);
@@ -198,7 +198,7 @@ def gpu_source_extraction(in1, tolerance, store_on_gpu):
 
     if store_on_gpu:
         gpu_store_objects = ker3.get_function("gpu_store_objects")
-        gpu_objects = gpuarray.empty(objects.shape, np.int32)
+        gpu_objects = gpuarray.empty(objects.shape, np.float32)
         gpu_idx = gpuarray.zeros([1], np.int32)
         gpu_idx += (objects.shape[0]-1)
 
