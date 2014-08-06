@@ -27,7 +27,7 @@ def iuwt_decomposition(in1, scale_count, scale_adjust=0, mode='ser', core_count=
     store_on_gpu        (default=False):    Boolean specifier for whether the decomposition is stored on the gpu or not.
 
     OUTPUTS:
-    Returns the decomposition.
+    Returns the decomposition with the additional smoothed coefficients if specified.
     """
 
     if mode=='ser':
@@ -37,7 +37,7 @@ def iuwt_decomposition(in1, scale_count, scale_adjust=0, mode='ser', core_count=
     elif mode=='gpu':
         return gpu_iuwt_decomposition(in1, scale_count, scale_adjust, store_smoothed, store_on_gpu)
 
-def iuwt_recomposition(in1, scale_adjust=0, mode='ser', core_count=1, store_on_gpu=False):
+def iuwt_recomposition(in1, scale_adjust=0, mode='ser', core_count=1, store_on_gpu=False, smoothed_array=None):
     """
     This function serves as a handler for the different implementations of the IUWT recomposition. It allows the
     different methods to be used almost interchangeably.
@@ -54,11 +54,11 @@ def iuwt_recomposition(in1, scale_adjust=0, mode='ser', core_count=1, store_on_g
     """
 
     if mode=='ser':
-        return ser_iuwt_recomposition(in1, scale_adjust)
+        return ser_iuwt_recomposition(in1, scale_adjust, smoothed_array)
     elif mode=='mp':
-        return mp_iuwt_recomposition(in1, scale_adjust, core_count)
+        return mp_iuwt_recomposition(in1, scale_adjust, core_count, smoothed_array)
     elif mode=='gpu':
-        return gpu_iuwt_recomposition(in1, scale_adjust, store_on_gpu)
+        return gpu_iuwt_recomposition(in1, scale_adjust, store_on_gpu, smoothed_array)
 
 def ser_iuwt_decomposition(in1, scale_count, scale_adjust, store_smoothed):
     """
@@ -107,7 +107,7 @@ def ser_iuwt_decomposition(in1, scale_count, scale_adjust, store_smoothed):
     else:
         return detail_coeffs
 
-def ser_iuwt_recomposition(in1, scale_adjust):
+def ser_iuwt_recomposition(in1, scale_adjust, smoothed_array):
     """
     This function calls the a trous algorithm code to recompose the input into a single array. This is the
     implementation of the isotropic undecimated wavelet transform recomposition for a single CPU core.
@@ -115,6 +115,7 @@ def ser_iuwt_recomposition(in1, scale_adjust):
     INPUTS:
     in1             (no default):   Array containing wavelet coefficients.
     scale_adjust    (no default):   Indicates the number of truncated array pages.
+    smoothed_array  (default=None): For a complete inverse transform, this must be the smoothest approximation.
 
     OUTPUTS:
     recomposition                   Array containing the reconstructed image.
@@ -122,19 +123,14 @@ def ser_iuwt_recomposition(in1, scale_adjust):
 
     wavelet_filter = (1./16)*np.array([1,4,6,4,1])      # Filter-bank for use in the a trous algorithm.
 
-    # Following checks that in1 is not simply a single 2D array. This just ensures that the recomposition is
-    # the correct size.
+    # Determines scale with adjustment and creates a zero array to store the output, unless smoothed_array is given.
 
-    if len(in1.shape)>2:
-        scale_count = in1.shape[0]
+    max_scale = in1.shape[0] + scale_adjust
+
+    if smoothed_array is None:
         recomposition = np.zeros([in1.shape[1], in1.shape[2]])
     else:
-        scale_count = 1
-        recomposition = np.zeros([in1.shape[0], in1.shape[1]])
-
-    # Max_scale is adjusted by the value of scale_adjust to give its true value.
-
-    max_scale = scale_count + scale_adjust
+        recomposition = smoothed_array
 
     # The following loops call the a trous algorithm code to recompose the input. The first loop assumes that there are
     # non-zero wavelet coefficients at scales above scale_adjust, while the second loop completes the recomposition
@@ -151,12 +147,15 @@ def ser_iuwt_recomposition(in1, scale_adjust):
 
 def ser_a_trous(C0, filter, scale):
     """
-    The following is an implementation of the a trous algorithm. Accepts the following parameters:
+    The following is a serial implementation of the a trous algorithm. Accepts the following parameters:
 
-    filter      (no default): The filter-bank which is applied to the components of the transform.
-    C0          (no default): The current array on which filtering is to be performed.
-    scale       (no default): The scale for which the decomposition is being carried out.
+    INPUTS:
+    filter      (no default):   The filter-bank which is applied to the components of the transform.
+    C0          (no default):   The current array on which filtering is to be performed.
+    scale       (no default):   The scale for which the decomposition is being carried out.
 
+    OUTPUTS:
+    C1                          The result of applying the a trous algorithm to the input.
     """
     tmp = filter[2]*C0
 
@@ -237,7 +236,7 @@ def mp_iuwt_decomposition(in1, scale_count, scale_adjust, store_smoothed, core_c
     else:
         return detail_coeffs
 
-def mp_iuwt_recomposition(in1, scale_adjust, core_count):
+def mp_iuwt_recomposition(in1, scale_adjust, core_count, smoothed_array):
     """
     This function calls the a trous algorithm code to recompose the input into a single array. This is the
     implementation of the isotropic undecimated wavelet transform recomposition for multiple CPU cores.
@@ -246,6 +245,7 @@ def mp_iuwt_recomposition(in1, scale_adjust, core_count):
     in1             (no default):   Array containing wavelet coefficients.
     scale_adjust    (no default):   Indicates the number of omitted array pages.
     core_count      (no default):   Indicates the number of cores to be used.
+    smoothed_array  (default=None): For a complete inverse transform, this must be the smoothest approximation.
 
     OUTPUTS:
     recomposiiton                   Array containing the reconstructed image.
@@ -253,18 +253,14 @@ def mp_iuwt_recomposition(in1, scale_adjust, core_count):
 
     wavelet_filter = (1./16)*np.array([1,4,6,4,1])      # Filter-bank for use in the a trous algorithm.
 
-    # Following checks that in1 is not simply a single 2D array.
+    # Determines scale with adjustment and creates a zero array to store the output, unless smoothed_array is given.
 
-    if len(in1.shape)>2:
-        scale_count = in1.shape[0]
+    max_scale = in1.shape[0] + scale_adjust
+
+    if smoothed_array is None:
         recomposition = np.zeros([in1.shape[1], in1.shape[2]])
     else:
-        scale_count = 1
-        recomposition = np.zeros([in1.shape[0], in1.shape[1]])
-
-    # Max_scale is adjusted by the value of scale_adjust to give its true value.
-
-    max_scale = scale_count + scale_adjust
+        recomposition = smoothed_array
 
     # The following loops call the a trous algorithm code to recompose the input. The first loop assumes that there are
     # non-zero wavelet coefficients at scales above scale_adjust, while the second loop completes the recomposition
@@ -495,11 +491,11 @@ def gpu_iuwt_decomposition(in1, scale_count, scale_adjust, store_smoothed, store
     if store_on_gpu:
         return detail_coeffs
     elif store_smoothed:
-        return detail_coeffs.get(), gpu_out1.get()
+        return detail_coeffs.get(), gpu_in1.get()
     else:
         return detail_coeffs.get()
 
-def gpu_iuwt_recomposition(in1, scale_adjust, store_on_gpu):
+def gpu_iuwt_recomposition(in1, scale_adjust, store_on_gpu, smoothed_array):
     """
     This function calls the a trous algorithm code to recompose the input into a single array. This is the
     implementation of the isotropic undecimated wavelet transform recomposition for a GPU.
@@ -516,10 +512,15 @@ def gpu_iuwt_recomposition(in1, scale_adjust, store_on_gpu):
     wavelet_filter = (1./16)*np.array([1,4,6,4,1], dtype=np.float32)    # Filter-bank for use in the a trous algorithm.
     wavelet_filter = gpuarray.to_gpu_async(wavelet_filter)
 
-    # Determines scale with adjustment and creates a zero array on the GPU to store the output.
-
+    # Determines scale with adjustment and creates a zero array on the GPU to store the output,unless smoothed_array
+    # is given.
+    
     max_scale = in1.shape[0] + scale_adjust
-    recomposition = gpuarray.zeros([in1.shape[1], in1.shape[2]], np.float32)
+
+    if smoothed_array is None:
+        recomposition = gpuarray.zeros([in1.shape[1], in1.shape[2]], np.float32)
+    else:
+        recomposition = gpuarray.to_gpu(smoothed_array.astype(np.float32))
 
     # Determines whether the array is already on the GPU or not. If not, moves it to the GPU.
 
@@ -655,4 +656,3 @@ def gpu_a_trous():
                        """)
 
     return ker1.get_function("gpu_a_trous_row_kernel"), ker2.get_function("gpu_a_trous_col_kernel")
-
