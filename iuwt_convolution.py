@@ -12,16 +12,16 @@ try:
 except:
     print "Pycuda unavailable - GPU mode will fail."
 
-def fft_convolve(in1, in2, conv_device='cpu', conv_mode="linear", store_on_gpu=False):
+def fft_convolve(in1, in2, conv_device="cpu", conv_mode="linear", store_on_gpu=False):
     """
     This function determines the convolution of two inputs using the FFT. Contains an implementation for both CPU
     and GPU.
 
     INPUTS:
-    in1 (no default): Array containing one set of data, possibly an image.
-    in2 (no default): Gpuarray containing the FFT of the PSF.
-    conv_device (default = 'cpu'): Parameter which allows specification of CPU or GPU use.
-    conv_mode (default = "linear") Mode specifier for the convolution.
+    in1             (no default):           Array containing one set of data, possibly an image.
+    in2             (no default):           Gpuarray containing the FFT of the PSF.
+    conv_device     (default = "cpu"):      Parameter which allows specification of "cpu" or "gpu".
+    conv_mode       (default = "linear"):   Mode specifier for the convolution - "linear" or "circular".
     """
 
     # NOTE: Circular convolution assumes a periodic repetition of the input. This can cause edge effects. Linear
@@ -74,14 +74,14 @@ def gpu_r2c_fft(in1, is_gpuarray=False, store_on_gpu=False):
     This function makes use of the scikits implementation of the FFT for GPUs to take the real to complex FFT.
 
     INPUTS:
-    in1 (no default): The array on which the FFT is to be performed.
-    is_gpuarray (default=True): Boolean specifier for whether or not input is on the gpu.
-    store_on_gpu (default=False): Boolean specifier for whether the result is to be left on the gpu or not.
+    in1             (no default):       The array on which the FFT is to be performed.
+    is_gpuarray     (default=True):     Boolean specifier for whether or not input is on the gpu.
+    store_on_gpu    (default=False):    Boolean specifier for whether the result is to be left on the gpu or not.
 
     OUTPUTS:
-    gpu_out1 (no default): The gpu array containing the result.
+    gpu_out1                            The gpu array containing the result.
     OR
-    gpu_out1.get() (no default): The result from the gpu array.
+    gpu_out1.get()                      The result from the gpu array.
     """
 
     if is_gpuarray:
@@ -106,14 +106,14 @@ def gpu_c2r_ifft(in1, is_gpuarray=False, store_on_gpu=False):
     This function makes use of the scikits implementation of the FFT for GPUs to take the complex to real IFFT.
 
     INPUTS:
-    in1 (no default): The array on which the IFFT is to be performed.
-    is_gpuarray (default=True): Boolean specifier for whether or not input is on the gpu.
-    store_on_gpu (default=False): Boolean specifier for whether the result is to be left on the gpu or not.
+    in1             (no default):       The array on which the IFFT is to be performed.
+    is_gpuarray     (default=True):     Boolean specifier for whether or not input is on the gpu.
+    store_on_gpu    (default=False):    Boolean specifier for whether the result is to be left on the gpu or not.
 
     OUTPUTS:
-    gpu_out1 (no default): The gpu array containing the result.
+    gpu_out1                            The gpu array containing the result.
     OR
-    gpu_out1.get() (no default): The result from the gpu array.
+    gpu_out1.get()                      The result from the gpu array.
     """
 
     if is_gpuarray:
@@ -138,10 +138,10 @@ def pad_array(in1):
     Simple convenience function to pad arrays for linear convolution.
 
     INPUTS:
-    in1 (no default): Input array which is to be padded.
+    in1     (no default):   Input array which is to be padded.
 
     OUTPUTS:
-    out1 (no default): Padded version of the input.
+    out1                    Padded version of the input.
     """
 
     padded_size = 2*np.array(in1.shape)
@@ -153,10 +153,13 @@ def pad_array(in1):
 
 def fft_shift(in1):
     """
-    This function performs the FFT shift operation to restore the correct output shape.
+    This function performs the FFT shift operation on the GPU to restore the correct output shape.
 
     INPUTS:
-    in1 (no default): Array containing data which has been FFTed and IFFTed.
+    in1     (no default):   Array containing data which has been FFTed and IFFTed.
+
+    OUTPUTS:
+    in1                     FFT-shifted version of in1.
     """
 
     ker = SourceModule("""
@@ -192,10 +195,13 @@ def fft_shift(in1):
 
 def contiguous_slice(in1):
     """
-    This function unpads an array in such a way as to make it contiguous.
+    This function unpads an array on the GPU in such a way as to make it contiguous.
 
     INPUTS:
-    in1 (no default): Array containing data which has been padded.
+    in1     (no default):   Array containing data which has been padded.
+
+    OUTPUTS:
+    gpu_out1                Array containing unpadded, contiguous data.
     """
 
     ker = SourceModule("""

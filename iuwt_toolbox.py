@@ -10,11 +10,6 @@ try:
 except:
     print "Pycuda unavailable - GPU mode will fail."
 
-import pyfits
-import iuwt
-import pylab as pb
-import time
-
 def threshold(in1, sigma_level=4):
     """
     This function performs the thresholding of the values in array in1 based on the estimated standard deviation
@@ -25,7 +20,7 @@ def threshold(in1, sigma_level=4):
     sigma_level     (no default):   The number of estimated deviations at which thresholding is to occur.
 
     OUTPUTS:
-    out1            (no default):   An thresholded version of in1.
+    out1                            An thresholded version of in1.
     """
 
     out1 = np.empty_like(in1)
@@ -51,7 +46,7 @@ def source_extraction(in1, tolerance, mode="cpu", store_on_gpu=False):
     INPUTS:
     in1         (no default):   Array containing the wavelet decomposition.
     tolerance   (no default):   Percentage of maximum coefficient at which objects are deemed significant.
-    mode        (default="cpu"):Mode of operation - either gpu or cpu.
+    mode        (default="cpu"):Mode of operation - either "gpu" or "cpu".
 
     OUTPUTS:
     Array containing the significant wavelet coefficients of extracted sources.
@@ -75,8 +70,8 @@ def cpu_source_extraction(in1, tolerance):
     tolerance   (no default):   Percentage of maximum coefficient at which objects are deemed significant.
 
     OUTPUTS:
-    objects*in1 (no default):   The wavelet coefficients of the significant structures.
-    objects     (no default):   The mask of the significant structures.
+    objects*in1                 The wavelet coefficients of the significant structures.
+    objects                     The mask of the significant structures.
     """
 
     # The following initialises some variables for storing the labelled image and the number of labels. The per scale
@@ -84,8 +79,8 @@ def cpu_source_extraction(in1, tolerance):
 
     scale_maxima = np.empty([in1.shape[0],1])
 
-    objects = np.empty_like(in1, dtype=int)
-    object_count = np.empty([in1.shape[0],1], dtype=int)
+    objects = np.empty_like(in1, dtype=np.int32)
+    object_count = np.empty([in1.shape[0],1], dtype=np.int32)
 
     # The following loop uses functionality from the ndimage module to assess connectivity. The maxima are also
     # calculated here.
@@ -101,6 +96,7 @@ def cpu_source_extraction(in1, tolerance):
             tmp = (in1[i,:,:]>(tolerance*scale_maxima[i]))*objects[i,:,:]
         else:
             tmp = (in1[i,:,:]>(tolerance*scale_maxima[i]))*objects[i,:,:]*objects[i+1,:,:]
+
         labels = np.unique(tmp[tmp>0])
 
         for j in labels:
@@ -125,8 +121,8 @@ def gpu_source_extraction(in1, tolerance, store_on_gpu):
     store_on_gpu(no default):   Boolean specifier for whether the decomposition is stored on the gpu or not.
 
     OUTPUTS:
-    objects*in1 (no default):   The wavelet coefficients of the significant structures.
-    objects     (no default):   The mask of the significant structures.
+    objects*in1                 The wavelet coefficients of the significant structures.
+    objects                     The mask of the significant structures - if store_on_gpu is True, returns a gpuarray.
     """
 
     # The following are pycuda kernels which are executed on the gpu. Specifically, these both perform thresholding
@@ -204,8 +200,6 @@ def gpu_source_extraction(in1, tolerance, store_on_gpu):
 
     # The following removes the insignificant objects and then extracts the remaining ones.
 
-    label= gpuarray.zeros([1], np.int32)
-
     for i in range(-1,-in1.shape[0]-1,-1):
 
         condition = tolerance*scale_maxima[i]
@@ -215,7 +209,7 @@ def gpu_source_extraction(in1, tolerance, store_on_gpu):
         else:
             tmp = (in1[i,:,:]>condition)*objects[i,:,:]*objects[i+1,:,:]
 
-        labels = np.unique(tmp[tmp>0])
+        labels = (np.unique(tmp[tmp>0])).astype(np.int32)
 
         gpu_objects_page = gpuarray.to_gpu_async(objects[i,:,:].astype(np.int32))
 
@@ -226,6 +220,9 @@ def gpu_source_extraction(in1, tolerance, store_on_gpu):
         gpu_mask_kernel2(gpu_objects_page, block=(32,32,1), grid=(in1.shape[1]//32, in1.shape[1]//32))
 
         objects[i,:,:] = gpu_objects_page.get()
+
+        # In the event that all operations are to be done on the GPU, the following stores a version of the objects
+        # on the GPU. A handle to the gpuarray is then returned.
 
         if store_on_gpu:
             gpu_store_objects(gpu_objects_page, gpu_objects, gpu_idx, block=(32,32,1), grid=(objects.shape[2]//32,
@@ -246,39 +243,9 @@ def snr_ratio(in1, in2):
     in2         (no default):   Array containing values for signal 2.
 
     OUTPUTS:
-    out1        (no default):   The ratio of the signal to noise ratios of two signals.
+    out1                        The ratio of the signal to noise ratios of two signals.
     """
 
     out1 = 20*(np.log10(np.linalg.norm(in1)/np.linalg.norm(in1-in2)))
 
     return out1
-
-if __name__=="__main__":
-    img_hdu_list = pyfits.open("3C147.fits")
-    psf_hdu_list = pyfits.open("3C147_PSF.fits")
-
-    dirty_data = (img_hdu_list[0].data[0,0,:,:]).astype(np.float32)
-    psf_data = (psf_hdu_list[0].data[0,0,:,:]).astype(np.float32)
-
-    img_hdu_list.close()
-    psf_hdu_list.close()
-
-    # np.array([[1],[2],[3]])
-
-    # decomposition = iuwt.iuwt_decomposition(dirty_data,3)
-    # print decomposition.shape
-    #
-    # t = time.time()
-    # thresh_decom = threshold(decomposition, 5)
-    # print "THRESHOLD TIME", time.time() - t
-    #
-    # t = time.time()
-    # extraction1 = source_extraction(thresh_decom, 0.9)
-    # print "CPU TIME:", time.time() - t
-    #
-    # t = time.time()
-    # extraction2 = source_extraction(thresh_decom, 0.9, mode="gpu")
-    # print "GPU TIME:", time.time() - t
-    #
-    # print np.where(extraction1!=extraction2)
-

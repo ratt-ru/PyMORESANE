@@ -514,7 +514,7 @@ def gpu_iuwt_recomposition(in1, scale_adjust, store_on_gpu, smoothed_array):
 
     # Determines scale with adjustment and creates a zero array on the GPU to store the output,unless smoothed_array
     # is given.
-    
+
     max_scale = in1.shape[0] + scale_adjust
 
     if smoothed_array is None:

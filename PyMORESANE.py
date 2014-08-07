@@ -6,7 +6,6 @@ import iuwt_convolution as conv
 import iuwt_toolbox as tools
 import argparse
 
-import pylab as pb
 import time
 
 class FitsImage:
@@ -17,6 +16,10 @@ class FitsImage:
         Opens the original .fits images specified by imagename and psfname and stores their contents in appropriate
         variables for later use. Also initialises variables to store the sizes of the psf and dirty image as these
         quantities are used repeatedly.
+
+        INPUTS:
+        image_name  (no default):   Name of the input .fits file containing the dirty map.
+        psf_name    (no default):   Name of the input .fits file containing the PSF.
         """
 
         self.image_name = image_name
@@ -39,8 +42,8 @@ class FitsImage:
         self.residual = np.zeros_like(self.dirty_data)
 
     def moresane(self, subregion=None, scale_count=None, sigma_level=4, loop_gain=0.1, tolerance=0.75, accuracy=1e-6,
-                 major_loop_miter=100, minor_loop_miter=30, decom_mode="ser", core_count=1, conv_device='cpu',
-                 conv_mode='linear', extraction_mode='cpu', enforce_positivity=False):
+                 major_loop_miter=100, minor_loop_miter=30, all_on_gpu=False, decom_mode="ser", core_count=1,
+                 conv_device='cpu', conv_mode='linear', extraction_mode='cpu', enforce_positivity=False):
         """
         Primary method for wavelet analysis and subsequent deconvolution.
 
@@ -59,6 +62,7 @@ class FitsImage:
                                                 condition.
         minor_loop_miter    (default=30):       Maximum number of iterations allowed in the minor loop. Serves as an
                                                 exit condition when the SNR is does not reach a maximum.
+        all_on_gpu          (default=False):    Boolean specifier to toggle all gpu modes on.
         decom_mode          (default='ser'):    Specifier for decomposition mode - serial, multiprocessing, or gpu.
         core_count          (default=1):        For multiprocessing, specifies the number of cores.
         conv_device         (default='cpu'):    Specifier for device to be used - cpu or gpu.
@@ -76,6 +80,8 @@ class FitsImage:
         # The default value for subregion is the whole image. The default value for scale_count is the log to the
         # base two of the image dimensions minus one.
 
+        logger.info("Starting...")
+
         if subregion is None:
             subregion = self.dirty_data_shape[0]
 
@@ -83,10 +89,10 @@ class FitsImage:
             scale_count = int(np.log2(self.dirty_data_shape[0])-1)
             logger.info("Assuming maximum scale is {}.".format(scale_count))
 
-        if (decom_mode=='gpu')&(conv_device=='gpu')&(extraction_mode=='gpu'):
-            all_on_gpu = True
-        else:
-            all_on_gpu = False
+        if all_on_gpu:
+            decom_mode = 'gpu'
+            conv_device = 'gpu'
+            extraction_mode = 'gpu'
 
         # The following creates arrays with dimensions equal to subregion and containing the values of the dirty
         # image and psf in their central subregions.
@@ -173,6 +179,14 @@ class FitsImage:
         min_scale = 0   # The current minimum scale of interest. If this ever equals or exceeds the scale_count
                         # value, it will also break the following loop.
 
+        offset = 0
+        supression_array = np.zeros([scale_count,subregion,subregion],np.float32)
+        for i in range(scale_count):
+            offset += 2*2**i
+            supression_array[i,offset:-offset, offset:-offset] = 1
+        print supression_array
+
+
         # The following is the major loop. Its exit conditions are reached if if the number of major loop iterations
         # exceeds a user defined value, the maximum wavelet coefficient is zero or the standard deviation of the
         # residual drops below a user specified accuracy threshold.
@@ -191,6 +205,7 @@ class FitsImage:
                 if min_scale==0:
                     dirty_decomposition = iuwt.iuwt_decomposition(dirty_subregion, scale_count, 0, decom_mode, core_count)
                     dirty_decomposition_thresh = tools.threshold(dirty_decomposition, sigma_level=sigma_level)
+                    dirty_decomposition_thresh *= supression_array
 
                     # The following calculates and stores the normalised maximum at each scale.
 
@@ -212,7 +227,7 @@ class FitsImage:
                     logger.info("No significant wavelet coefficients detected.")
                     break
 
-                logger.debug("Minimum scale = {}".format(min_scale))
+                logger.info("Minimum scale = {}".format(min_scale))
                 logger.info("Maximum scale = {}".format(max_scale))
 
                 # The following constitutes a major change to the original implementation - the aim is to establish
@@ -323,7 +338,8 @@ class FitsImage:
                     # recalculation is required.
 
                     if (minor_loop_niter==1)&(snr_current>40):
-                        logger.info("SNR too large - false detection. Incrementing the minimum scale.")
+                        logger.info("SNR too large on first iteration - false detection. "
+                                    "Incrementing the minimum scale.")
                         min_scale += 1
                         break
 
@@ -373,6 +389,8 @@ class FitsImage:
 
                 residual = self.dirty_data - conv.fft_convolve(model, psf_data_fft, conv_device, conv_mode)
 
+                # The following assesses whether or not the residual has improved.
+
                 std_last = std_current
                 std_current = np.std(residual)
                 std_ratio = (std_last-std_current)/std_last
@@ -408,8 +426,8 @@ class FitsImage:
             self.residual = residual
 
     def moresane_by_scale(self, start_scale=1, stop_scale=20, subregion=None, sigma_level=4, loop_gain=0.1,
-                          tolerance=0.75, accuracy=1e-6, major_loop_miter=100, minor_loop_miter=30, decom_mode="ser",
-                          core_count=1, conv_device='cpu', conv_mode='linear', extraction_mode='cpu',
+                          tolerance=0.75, accuracy=1e-6, major_loop_miter=100, minor_loop_miter=30, all_on_gpu=False,
+                          decom_mode="ser", core_count=1, conv_device='cpu', conv_mode='linear', extraction_mode='cpu',
                           enforce_positivity=False):
         """
         Extension of the MORESANE algorithm. This takes a scale-by-scale approach, attempting to remove all sources
@@ -431,6 +449,7 @@ class FitsImage:
                                                 condition.
         minor_loop_miter    (default=30):       Maximum number of iterations allowed in the minor loop. Serves as an
                                                 exit condition when the SNR does not reach a maximum.
+        all_on_gpu          (default=False):    Boolean specifier to toggle all gpu modes on.
         decom_mode          (default='ser'):    Specifier for decomposition mode - serial, multiprocessing, or gpu.
         core_count          (default=1):        In the event that multiprocessing, specifies the number of cores.
         conv_device         (default='cpu'):    Specifier for device to be used - cpu or gpu.
@@ -455,9 +474,9 @@ class FitsImage:
 
             self.moresane(subregion=subregion, scale_count=scale_count, sigma_level=sigma_level, loop_gain=loop_gain,
                           tolerance=tolerance, accuracy=accuracy, major_loop_miter=major_loop_miter,
-                          minor_loop_miter=minor_loop_miter, decom_mode=decom_mode, core_count=core_count,
-                          conv_device=conv_device, conv_mode=conv_mode, extraction_mode=extraction_mode,
-                          enforce_positivity=enforce_positivity)
+                          minor_loop_miter=minor_loop_miter, all_on_gpu=all_on_gpu, decom_mode=decom_mode,
+                          core_count=core_count, conv_device=conv_device, conv_mode=conv_mode,
+                          extraction_mode=extraction_mode, enforce_positivity=enforce_positivity)
 
             self.dirty_data = self.residual
 
@@ -474,6 +493,7 @@ class FitsImage:
         # Restores the original dirty image.
 
         self.dirty_data = dirty_data
+        self.complete = False
 
     def save_fits(self, data, name):
         """
@@ -487,37 +507,51 @@ class FitsImage:
         new_file = pyfits.PrimaryHDU(data,self.img_hdu_list[0].header)
         new_file.writeto("{}.fits".format(name), clobber=True)
 
+    def make_logger(self, level="INFO"):
+        """
+        Convenience function which creates a logger for the module.
+
+        INPUTS:
+        level   (default="INFO"):   Minimum log level for logged/streamed messages.
+
+        OUTPUTS:
+        logger                      Logger for the function. NOTE: Must be bound to variable named logger.
+        """
+        level = getattr(logging, level.upper())
+
+        logger = logging.getLogger('main')
+        logger.setLevel(logging.DEBUG)
+
+        fh = logging.FileHandler('PyMORESANE.log', mode='w')
+        fh.setLevel(level)
+
+        ch = logging.StreamHandler()
+        ch.setLevel(level)
+
+        formatter = logging.Formatter('%(asctime)s [%(levelname)s]: %(''message)s', datefmt='[%m/%d/%Y] [%I:%M:%S]')
+        fh.setFormatter(formatter)
+        ch.setFormatter(formatter)
+
+        logger.addHandler(fh)
+        logger.addHandler(ch)
+
+        return logger
+
 if __name__ == "__main__":
-    logger = logging.getLogger('main')
-    logger.setLevel(logging.DEBUG)
+    # test = FitsImage("3C147.fits","3C147_PSF.fits")
+    test = FitsImage("DIRTY.fits","PSF.fits")
 
-    fh = logging.FileHandler('PyMORESANE.log', mode='w')
-    fh.setLevel(logging.INFO)
-
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.INFO)
-
-    formatter = logging.Formatter('%(asctime)s [%(levelname)s]: %(''message)s', datefmt='[%m/%d/%Y] [%I:%M:%S]')
-    fh.setFormatter(formatter)
-    ch.setFormatter(formatter)
-
-    logger.addHandler(fh)
-    logger.addHandler(ch)
-
-    logger.info("Starting...")
-
-    test = FitsImage("3C147.fits","3C147_PSF.fits")
-    # test = FitsImage("DIRTY.fits","PSF.fits")
+    logger = test.make_logger("INFO")
 
     start_time = time.time()
     # test.moresane(scale_count = 9, major_loop_miter=100, minor_loop_miter=30, tolerance=0.8, \
     #                 conv_mode="linear", accuracy=1e-6, loop_gain=0.2, enforce_positivity=True, sigma_level=5,
     #                 decom_mode="gpu", extraction_mode="gpu", conv_device="gpu")
     test.moresane_by_scale(major_loop_miter=100, minor_loop_miter=50, tolerance=0.80,
-                    conv_mode="circular", accuracy=1e-6, loop_gain=0.2, enforce_positivity=False, sigma_level=4,
-                    decom_mode="gpu", extraction_mode="gpu", conv_device="gpu")
-    # test.moresane_by_scale(subregion=512, major_loop_miter=100, minor_loop_miter=25, tolerance=0.85,
-    #                 conv_mode="circular", accuracy=1e-6, loop_gain=0.3, enforce_positivity=True, sigma_level=5)
+                    conv_mode="circular", accuracy=1e-6, loop_gain=0.3, enforce_positivity=True, sigma_level=5,
+                    all_on_gpu=True)
+    # test.moresane_by_scale(subregion=512, major_loop_miter=100, minor_loop_miter=30, tolerance=0.7,
+    #                 conv_mode="circular", accuracy=1e-6, loop_gain=0.2, enforce_positivity=True, sigma_level=4)
 
     end_time = time.time()
     logger.info("Elapsed time was %s." % (time.strftime('%H:%M:%S', time.gmtime(end_time - start_time))))
