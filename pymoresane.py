@@ -43,7 +43,8 @@ class FitsImage:
 
     def moresane(self, subregion=None, scale_count=None, sigma_level=4, loop_gain=0.1, tolerance=0.75, accuracy=1e-6,
                  major_loop_miter=100, minor_loop_miter=30, all_on_gpu=False, decom_mode="ser", core_count=1,
-                 conv_device='cpu', conv_mode='linear', extraction_mode='cpu', enforce_positivity=False):
+                 conv_device='cpu', conv_mode='linear', extraction_mode='cpu', enforce_positivity=False,
+                 edge_suppression=False, edge_offset=0):
         """
         Primary method for wavelet analysis and subsequent deconvolution.
 
@@ -69,6 +70,9 @@ class FitsImage:
         conv_mode           (default='linear'): Specifier for convolution mode - linear or circular.
         extraction_mode     (default='cpu'):    Specifier for mode to be used - cpu or gpu.
         enforce_positivity  (default=False):    Boolean specifier for whether or not a model must be strictly positive.
+        edge_suppression    (default=False):    Boolean specifier for whether or not the edges are to be suprressed.
+        edge_offset         (default=0):        Numeric value for an additional user-specified number of edge pixels
+                                                to be ignored. This is added to the minimum suppression.
 
         OUTPUTS:
         self.model          (no default):       Model extracted by the algorithm.
@@ -179,13 +183,14 @@ class FitsImage:
         min_scale = 0   # The current minimum scale of interest. If this ever equals or exceeds the scale_count
                         # value, it will also break the following loop.
 
-        offset = 0
-        supression_array = np.zeros([scale_count,subregion,subregion],np.float32)
-        for i in range(scale_count):
-            offset += 2*2**i
-            supression_array[i,offset:-offset, offset:-offset] = 1
-        print supression_array
+        # In the case that edge_supression is desired, the following sets up a masking array.
 
+        if edge_suppression:
+            edge_offset = edge_offset
+            suppression_array = np.zeros([scale_count,subregion,subregion],np.float32)
+            for i in range(scale_count):
+                edge_offset += 2*2**i
+                suppression_array[i,edge_offset:-edge_offset, edge_offset:-edge_offset] = 1
 
         # The following is the major loop. Its exit conditions are reached if if the number of major loop iterations
         # exceeds a user defined value, the maximum wavelet coefficient is zero or the standard deviation of the
@@ -205,7 +210,11 @@ class FitsImage:
                 if min_scale==0:
                     dirty_decomposition = iuwt.iuwt_decomposition(dirty_subregion, scale_count, 0, decom_mode, core_count)
                     dirty_decomposition_thresh = tools.threshold(dirty_decomposition, sigma_level=sigma_level)
-                    dirty_decomposition_thresh *= supression_array
+
+                    # If edge_supression is desired, the following simply masks out the offending wavelet coefficients.
+
+                    if edge_suppression:
+                        dirty_decomposition_thresh *= suppression_array
 
                     # The following calculates and stores the normalised maximum at each scale.
 
@@ -428,7 +437,7 @@ class FitsImage:
     def moresane_by_scale(self, start_scale=1, stop_scale=20, subregion=None, sigma_level=4, loop_gain=0.1,
                           tolerance=0.75, accuracy=1e-6, major_loop_miter=100, minor_loop_miter=30, all_on_gpu=False,
                           decom_mode="ser", core_count=1, conv_device='cpu', conv_mode='linear', extraction_mode='cpu',
-                          enforce_positivity=False):
+                          enforce_positivity=False, edge_suppression=False, edge_offset=0):
         """
         Extension of the MORESANE algorithm. This takes a scale-by-scale approach, attempting to remove all sources
         at the lower scales before moving onto the higher ones. At each step the algorithm may return to previous
@@ -456,6 +465,9 @@ class FitsImage:
         conv_mode           (default='linear'): Specifier for convolution mode - linear or circular.
         extraction_mode     (default='cpu'):    Specifier for mode to be used - cpu or gpu.
         enforce_positivity  (default=False):    Boolean specifier for whether or not a model must be strictly positive.
+        edge_suppression    (default=False):    Boolean specifier for whether or not the edges are to be suprressed.
+        edge_offset         (default=0):        Numeric value for an additional user-specified number of edge pixels
+                                                to be ignored. This is added to the minimum suppression.
 
         OUTPUTS:
         self.model          (no default):       Model extracted by the algorithm.
@@ -476,7 +488,8 @@ class FitsImage:
                           tolerance=tolerance, accuracy=accuracy, major_loop_miter=major_loop_miter,
                           minor_loop_miter=minor_loop_miter, all_on_gpu=all_on_gpu, decom_mode=decom_mode,
                           core_count=core_count, conv_device=conv_device, conv_mode=conv_mode,
-                          extraction_mode=extraction_mode, enforce_positivity=enforce_positivity)
+                          extraction_mode=extraction_mode, enforce_positivity=enforce_positivity,
+                          edge_suppression=edge_suppression, edge_offset=edge_offset)
 
             self.dirty_data = self.residual
 
@@ -547,17 +560,17 @@ if __name__ == "__main__":
     # test.moresane(scale_count = 9, major_loop_miter=100, minor_loop_miter=30, tolerance=0.8, \
     #                 conv_mode="linear", accuracy=1e-6, loop_gain=0.2, enforce_positivity=True, sigma_level=5,
     #                 decom_mode="gpu", extraction_mode="gpu", conv_device="gpu")
-    test.moresane_by_scale(major_loop_miter=100, minor_loop_miter=50, tolerance=0.80,
-                    conv_mode="circular", accuracy=1e-6, loop_gain=0.3, enforce_positivity=True, sigma_level=5,
-                    all_on_gpu=True)
+    test.moresane_by_scale(major_loop_miter=100, minor_loop_miter=50, tolerance=0.75,
+                    conv_mode="circular", accuracy=1e-6, loop_gain=0.3, enforce_positivity=True, sigma_level=4,
+                    all_on_gpu=True, edge_suppression=True)
     # test.moresane_by_scale(subregion=512, major_loop_miter=100, minor_loop_miter=30, tolerance=0.7,
     #                 conv_mode="circular", accuracy=1e-6, loop_gain=0.2, enforce_positivity=True, sigma_level=4)
 
     end_time = time.time()
     logger.info("Elapsed time was %s." % (time.strftime('%H:%M:%S', time.gmtime(end_time - start_time))))
 
-    test.save_fits(test.model, "GPU_DIRTY_model_2048px_3sigma")
-    test.save_fits(test.residual, "GPU_DIRTY_residual_2048px_3sigma")
+    test.save_fits(test.model, "GPU_DIRTY_model_2048px_4sigma_supression")
+    test.save_fits(test.residual, "GPU_DIRTY_residual_2048px_4sigma_supression")
 
 
 
