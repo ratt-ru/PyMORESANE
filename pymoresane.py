@@ -4,8 +4,7 @@ import numpy as np
 import iuwt
 import iuwt_convolution as conv
 import iuwt_toolbox as tools
-import argparse
-
+import pymoresane_parser as pparser
 import time
 
 class FitsImage:
@@ -86,8 +85,9 @@ class FitsImage:
 
         logger.info("Starting...")
 
-        if subregion is None:
+        if (subregion is None)|(subregion>self.dirty_data_shape[0]):
             subregion = self.dirty_data_shape[0]
+            logger.info("Assuming subregion is {}px.".format(self.dirty_data_shape[0]))
 
         if (scale_count is None) or (scale_count>(np.log2(self.dirty_data_shape[0])-1)):
             scale_count = int(np.log2(self.dirty_data_shape[0])-1)
@@ -128,10 +128,6 @@ class FitsImage:
                     psf_data_fft = conv.pad_array(self.psf_data)
                     psf_data_fft = conv.gpu_r2c_fft(psf_data_fft, is_gpuarray=False, store_on_gpu=True)
 
-            else:
-                logger.warning("Invalid convolution mode - aborting execution.")
-                return
-
         elif conv_device=="cpu":
 
             if conv_mode=="circular":
@@ -149,14 +145,6 @@ class FitsImage:
                 else:
                     psf_data_fft = conv.pad_array(self.psf_data)
                     psf_data_fft = np.fft.rfft2(psf_data_fft)
-
-            else:
-                logger.warning("Invalid convolution mode - aborting execution.")
-                return
-
-        else:
-            logger.warning("Invalid convolution device - aborting execution.")
-            return
 
         # The following is a call to the first of the IUWT (Isotropic Undecimated Wavelet Transform) functions. This
         # returns the decomposition of the PSF. The norm of each scale is found - these correspond to the energies or
@@ -480,6 +468,7 @@ class FitsImage:
 
         scale_count = start_scale
 
+
         while not (self.complete):
 
             logger.info("MORESANE at scale {}".format(scale_count))
@@ -551,28 +540,40 @@ class FitsImage:
         return logger
 
 if __name__ == "__main__":
-    # test = FitsImage("3C147.fits","3C147_PSF.fits")
-    test = FitsImage("DIRTY.fits","PSF.fits")
+    args = pparser.handle_parser()
 
-    logger = test.make_logger("INFO")
+    data = FitsImage(args.dirty, args.psf)
+
+    logger = data.make_logger(args.loglevel)
 
     start_time = time.time()
-    # test.moresane(scale_count = 9, major_loop_miter=100, minor_loop_miter=30, tolerance=0.8, \
-    #                 conv_mode="linear", accuracy=1e-6, loop_gain=0.2, enforce_positivity=True, sigma_level=5,
-    #                 decom_mode="gpu", extraction_mode="gpu", conv_device="gpu")
-    test.moresane_by_scale(major_loop_miter=100, minor_loop_miter=50, tolerance=0.75,
-                    conv_mode="circular", accuracy=1e-6, loop_gain=0.3, enforce_positivity=True, sigma_level=4,
-                    all_on_gpu=True, edge_suppression=True)
-    # test.moresane_by_scale(subregion=512, major_loop_miter=100, minor_loop_miter=30, tolerance=0.7,
-    #                 conv_mode="circular", accuracy=1e-6, loop_gain=0.2, enforce_positivity=True, sigma_level=4)
+
+    if args.singlerun:
+        data.moresane(args.subregion, args.scalecount, args.sigmalevel, args.loopgain, args.tolerance, args.accuracy,
+                      args.majorloopmiter, args.minorloopmiter, args.allongpu, args.decommode, args.corecount,
+                      args.convdevice, args.convmode, args.extractionmode, args.enforcepositivity,
+                      args.edgesuppression, args.edgeoffset)
+    else:
+        data.moresane_by_scale(args.startscale, args.stopscale, args.subregion, args.sigmalevel, args.loopgain,
+                               args.tolerance, args.accuracy, args.majorloopmiter, args.minorloopmiter, args.allongpu,
+                               args.decommode,  args.corecount, args.convdevice, args.convmode, args.extractionmode,
+                               args.enforcepositivity, args.edgesuppression, args.edgeoffset)
 
     end_time = time.time()
     logger.info("Elapsed time was %s." % (time.strftime('%H:%M:%S', time.gmtime(end_time - start_time))))
 
-    test.save_fits(test.model, "GPU_DIRTY_model_2048px_4sigma_supression")
-    test.save_fits(test.residual, "GPU_DIRTY_residual_2048px_4sigma_supression")
+    data.save_fits(data.model, args.outputname+"_model")
+    data.save_fits(data.residual, args.outputname+"_residual")
 
 
+    # test.moresane(scale_count = 9, major_loop_miter=100, minor_loop_miter=30, tolerance=0.8, \
+    #                 conv_mode="linear", accuracy=1e-6, loop_gain=0.2, enforce_positivity=True, sigma_level=5,
+    #                 decom_mode="gpu", extraction_mode="gpu", conv_device="gpu")
+    # test.moresane_by_scale(major_loop_miter=100, minor_loop_miter=50, tolerance=0.75,
+    #                 conv_mode="circular", accuracy=1e-6, loop_gain=0.3, enforce_positivity=True, sigma_level=4,
+    #                 all_on_gpu=True, edge_suppression=True)
+    # test.moresane_by_scale(subregion=512, major_loop_miter=100, minor_loop_miter=30, tolerance=0.7,
+    #                 conv_mode="circular", accuracy=1e-6, loop_gain=0.2, enforce_positivity=True, sigma_level=4)
 
 
 
