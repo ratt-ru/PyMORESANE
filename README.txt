@@ -9,7 +9,7 @@ Add the following to your .bashrc or .bash_aliases:
 alias runsane='python ~/PyMORESANE/pymoresane.py'
 
 If you have put the PyMORESANE folder elsewhere, simply
-amend the alais to reflect its location.
+amend the alias to reflect its location.
 
 Now, running pymoresane.py is as simple as typing
 runsane followed by the inputs you desire. runsane --help
