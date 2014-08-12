@@ -300,6 +300,7 @@ class FitsImage:
 
                         xn[xn<0] = 0
                         p = (xn-x)/alpha
+                        
                         Ap = conv.fft_convolve(p, psf_subregion_fft, conv_device, conv_mode, store_on_gpu=all_on_gpu)
                         Ap = iuwt.iuwt_decomposition(Ap, max_scale, scale_adjust, decom_mode, core_count,
                                                      store_on_gpu=all_on_gpu)
