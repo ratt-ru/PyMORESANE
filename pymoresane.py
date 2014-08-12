@@ -1,3 +1,4 @@
+from Timba.Apps.assayer import logger
 import logging
 import pyfits
 import numpy as np
@@ -299,7 +300,6 @@ class FitsImage:
 
                         xn[xn<0] = 0
                         p = (xn-x)/alpha
-
                         Ap = conv.fft_convolve(p, psf_subregion_fft, conv_device, conv_mode, store_on_gpu=all_on_gpu)
                         Ap = iuwt.iuwt_decomposition(Ap, max_scale, scale_adjust, decom_mode, core_count,
                                                      store_on_gpu=all_on_gpu)
@@ -545,6 +545,7 @@ if __name__ == "__main__":
     data = FitsImage(args.dirty, args.psf)
 
     logger = data.make_logger(args.loglevel)
+    logger.info("Parameters:\n" + str(args)[10:-1])
 
     start_time = time.time()
 
