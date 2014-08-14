@@ -93,9 +93,9 @@ def cpu_source_extraction(in1, tolerance):
 
     for i in range(-1,-in1.shape[0]-1,-1):
         if i==(-1):
-            tmp = (in1[i,:,:]>(tolerance*scale_maxima[i]))*objects[i,:,:]
+            tmp = (in1[i,:,:]>=(tolerance*scale_maxima[i]))*objects[i,:,:]
         else:
-            tmp = (in1[i,:,:]>(tolerance*scale_maxima[i]))*objects[i,:,:]*objects[i+1,:,:]
+            tmp = (in1[i,:,:]>=(tolerance*scale_maxima[i]))*objects[i,:,:]*objects[i+1,:,:]
 
         labels = np.unique(tmp[tmp>0])
 
@@ -205,9 +205,9 @@ def gpu_source_extraction(in1, tolerance, store_on_gpu):
         condition = tolerance*scale_maxima[i]
 
         if i==(-1):
-            tmp = (in1[i,:,:]>condition)*objects[i,:,:]
+            tmp = (in1[i,:,:]>=condition)*objects[i,:,:]
         else:
-            tmp = (in1[i,:,:]>condition)*objects[i,:,:]*objects[i+1,:,:]
+            tmp = (in1[i,:,:]>=condition)*objects[i,:,:]*objects[i+1,:,:]
 
         labels = (np.unique(tmp[tmp>0])).astype(np.int32)
 

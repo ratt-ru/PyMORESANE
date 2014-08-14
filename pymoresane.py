@@ -6,6 +6,7 @@ import iuwt
 import iuwt_convolution as conv
 import iuwt_toolbox as tools
 import pymoresane_parser as pparser
+import beam_fit
 import time
 
 class FitsImage:
@@ -28,8 +29,8 @@ class FitsImage:
         self.img_hdu_list = pyfits.open("{}".format(self.image_name))
         self.psf_hdu_list = pyfits.open("{}".format(self.psf_name))
 
-        self.dirty_data = (self.img_hdu_list[0].data[0,0,:,:]).astype(np.float32)
-        self.psf_data = (self.psf_hdu_list[0].data[0,0,:,:]).astype(np.float32)
+        self.dirty_data = (self.img_hdu_list[0].data[...,:,:]).astype(np.float32)
+        self.psf_data = (self.psf_hdu_list[0].data[...,:,:]).astype(np.float32)
 
         self.img_hdu_list.close()
         self.psf_hdu_list.close()
@@ -40,6 +41,7 @@ class FitsImage:
         self.complete = False
         self.model = np.zeros_like(self.dirty_data)
         self.residual = np.zeros_like(self.dirty_data)
+        self.restored = np.zeros_like(self.dirty_data)
 
     def moresane(self, subregion=None, scale_count=None, sigma_level=4, loop_gain=0.1, tolerance=0.75, accuracy=1e-6,
                  major_loop_miter=100, minor_loop_miter=30, all_on_gpu=False, decom_mode="ser", core_count=1,
@@ -300,7 +302,7 @@ class FitsImage:
 
                         xn[xn<0] = 0
                         p = (xn-x)/alpha
-                        
+
                         Ap = conv.fft_convolve(p, psf_subregion_fft, conv_device, conv_mode, store_on_gpu=all_on_gpu)
                         Ap = iuwt.iuwt_decomposition(Ap, max_scale, scale_adjust, decom_mode, core_count,
                                                      store_on_gpu=all_on_gpu)
@@ -498,6 +500,16 @@ class FitsImage:
         self.dirty_data = dirty_data
         self.complete = False
 
+    def restore(self):
+        """
+        This method constructs the restoring beam and then adds the convolution to the residual.
+        """
+
+        clean_beam, beam_params = beam_fit.beam_fit(self.psf_data, self.psf_hdu_list)
+        self.restored = np.fft.fftshift(np.fft.irfft2(np.fft.rfft2(self.model)*np.fft.rfft2(clean_beam)))
+        self.restored += self.residual
+        self.restored = self.restored.astype(np.float32)
+
     def save_fits(self, data, name):
         """
         This method simply saves the model components and the residual.
@@ -564,9 +576,11 @@ if __name__ == "__main__":
     end_time = time.time()
     logger.info("Elapsed time was %s." % (time.strftime('%H:%M:%S', time.gmtime(end_time - start_time))))
 
+    data.restore()
+
     data.save_fits(data.model, args.outputname+"_model")
     data.save_fits(data.residual, args.outputname+"_residual")
-
+    data.save_fits(data.restored, args.outputname+"_restored")
 
     # test.moresane(scale_count = 9, major_loop_miter=100, minor_loop_miter=30, tolerance=0.8, \
     #                 conv_mode="linear", accuracy=1e-6, loop_gain=0.2, enforce_positivity=True, sigma_level=5,
