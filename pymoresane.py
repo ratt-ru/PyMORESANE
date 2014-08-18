@@ -29,14 +29,14 @@ class FitsImage:
         self.img_hdu_list = pyfits.open("{}".format(self.image_name))
         self.psf_hdu_list = pyfits.open("{}".format(self.psf_name))
 
-        self.dirty_data = (self.img_hdu_list[0].data[...,:,:]).astype(np.float32)
-        self.psf_data = (self.psf_hdu_list[0].data[...,:,:]).astype(np.float32)
+        self.dirty_data_shape = self.img_hdu_list[0].data.shape[-2:]
+        self.psf_data_shape = self.psf_hdu_list[0].data.shape[-2:]
+
+        self.dirty_data = (self.img_hdu_list[0].data[...,:,:]).astype(np.float32).reshape(self.dirty_data_shape)
+        self.psf_data = (self.psf_hdu_list[0].data[...,:,:]).astype(np.float32).reshape(self.psf_data_shape)
 
         self.img_hdu_list.close()
         self.psf_hdu_list.close()
-
-        self.dirty_data_shape = self.dirty_data.shape
-        self.psf_data_shape = self.psf_data.shape
 
         self.complete = False
         self.model = np.zeros_like(self.dirty_data)
@@ -177,11 +177,14 @@ class FitsImage:
         # In the case that edge_supression is desired, the following sets up a masking array.
 
         if edge_suppression:
-            edge_offset = edge_offset
+            edge_corruption = 0
             suppression_array = np.zeros([scale_count,subregion,subregion],np.float32)
             for i in range(scale_count):
-                edge_offset += 2*2**i
-                suppression_array[i,edge_offset:-edge_offset, edge_offset:-edge_offset] = 1
+                edge_corruption += 2*2**i
+                if edge_offset>edge_corruption:
+                    suppression_array[i,edge_offset:-edge_offset, edge_offset:-edge_offset] = 1
+                else:
+                    suppression_array[i,edge_corruption:-edge_corruption, edge_corruption:-edge_corruption] = 1
 
         # The following is the major loop. Its exit conditions are reached if if the number of major loop iterations
         # exceeds a user defined value, the maximum wavelet coefficient is zero or the standard deviation of the
