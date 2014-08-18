@@ -241,12 +241,12 @@ class FitsImage:
                 scale_adjust = 0
 
                 for i in range(max_index-1,-1,-1):
-                    if max_index > 1:
-                        if (normalised_scale_maxima[i,0,0] > normalised_scale_maxima[i+1,0,0]):
-                            scale_adjust = i + 1
-                            logger.info("Scale {} contains a local maxima. Ignoring scales <= {}"
-                                            .format(scale_adjust, scale_adjust))
-                            break
+                    # if max_index > 1:
+                    #     if (normalised_scale_maxima[i,0,0] > normalised_scale_maxima[i+1,0,0]):
+                    #         scale_adjust = i + 1
+                    #         logger.info("Scale {} contains a local maxima. Ignoring scales <= {}"
+                    #                         .format(scale_adjust, scale_adjust))
+                    #         break
                     if (normalised_scale_maxima[i,0,0] == 0):
                         scale_adjust = i + 1
                         logger.info("Scale {} is empty. Ignoring scales <= {}".format(scale_adjust, scale_adjust))

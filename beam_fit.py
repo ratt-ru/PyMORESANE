@@ -12,7 +12,7 @@ def beam_fit(psf,psfheader):
     """
     psf_max_location = np.unravel_index(np.argmax(psf), psf.shape)
 
-    threshold_psf = np.where(psf>0.01,psf,0)
+    threshold_psf = np.where(psf>0.1,psf,0)
 
     labelled_psf, labels = ndimage.label(threshold_psf)
 
