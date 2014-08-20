@@ -1,7 +1,7 @@
 ### BASIC INSTALLATION
 
-Install [NUMPY AND SCIPY](http://www.scipy.org/install.html). 
-Install [PYFITS](http://www.stsci.edu/institute/software_hardware/pyfits/Download).
+Install [numpy and scipy](http://www.scipy.org/install.html). 
+Install [pyfits](http://www.stsci.edu/institute/software_hardware/pyfits/Download).
 
 The following assumes you have numpy, scipy and pyfits installed.
 
