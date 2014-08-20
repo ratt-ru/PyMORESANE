@@ -1,4 +1,4 @@
-# INSTALLATION
+### INSTALLATION
 
 INSTALL [NUMPY AND SCIPY](http://www.scipy.org/install.html). 
 INSTALL [PYFITS](http://www.stsci.edu/institute/software_hardware/pyfits/Download).
