@@ -6,7 +6,8 @@ def handle_parser():
     """
     parser = argparse.ArgumentParser(description="Runs the pymoresane deconvolution algorithm with the specified "
                                                  "arguments. In the event that non-critical parameters are missing, "
-                                                 "the defaults will be used.")
+                                                 "the defaults will be used.",
+                                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument("dirty", help="File name and location of the input dirty map .fits file.")
 
