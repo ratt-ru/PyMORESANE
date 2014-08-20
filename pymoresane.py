@@ -1,4 +1,3 @@
-from Timba.Apps.assayer import logger
 import logging
 import pyfits
 import numpy as np
