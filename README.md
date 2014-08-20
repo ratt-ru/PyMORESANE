@@ -1,7 +1,7 @@
 			          #INSTALLATION
 
-INSTALL NUMPY AND SCIPY: http://www.scipy.org/install.html
-INSTALL PYFITS: http://www.stsci.edu/institute/software_hardware/pyfits/Download
+INSTALL [NUMPY AND SCIPY](http://www.scipy.org/install.html). 
+INSTALL [PYFITS](http://www.stsci.edu/institute/software_hardware/pyfits/Download).
 
 THE FOLLOWING ASSUMES YOU HAVE SCIPY, NUMPY AND PYFITS INSTALLED.
 
