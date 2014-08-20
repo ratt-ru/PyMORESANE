@@ -9,7 +9,7 @@ Simply download all the files/zip from GitHub.
 
 Place all files in a single directroy, e.g. ~/PyMORESANE
 
-Add the following to your .bashrc or .bash_aliases:
+Add the following to your .bashrc or .bash_aliases:  
 alias runsane='python ~/PyMORESANE/pymoresane.py'
 
 If you have put the PyMORESANE folder elsewhere, simply amend the alias to reflect its location.
