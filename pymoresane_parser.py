@@ -62,7 +62,7 @@ def handle_parser():
                                                    "single CPU core, multiple CPU cores or the GPU."
                                                    , default="ser", choices=["ser","mp","gpu"])
 
-    parser.add_argument("-cc", "--corecount", help="Specify the number of CPU cores to be used in the even that "
+    parser.add_argument("-cc", "--corecount", help="Specify the number of CPU cores to be used in the event that "
                                                    "multiprocessing is enabled. This might not improve performance."
                                                    , default=1, type=int)
 
