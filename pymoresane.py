@@ -507,10 +507,14 @@ class FitsImage:
         This method constructs the restoring beam and then adds the convolution to the residual.
         """
 
-        clean_beam, beam_params = beam_fit.beam_fit(self.psf_data, self.psf_hdu_list)
+        clean_beam, beam_params = beam_fit.beam_fit(self.psf_data, self.psf_hdu_list[0].header)
         self.restored = np.fft.fftshift(np.fft.irfft2(np.fft.rfft2(self.model)*np.fft.rfft2(clean_beam)))
         self.restored += self.residual
         self.restored = self.restored.astype(np.float32)
+
+        self.img_hdu_list[0].header['BMAJ'] = beam_params[0]
+        self.img_hdu_list[0].header['BMIN'] = beam_params[1]
+        self.img_hdu_list[0].header['BPA'] = beam_params[2]
 
     def save_fits(self, data, name):
         """
@@ -578,10 +582,10 @@ if __name__ == "__main__":
     end_time = time.time()
     logger.info("Elapsed time was %s." % (time.strftime('%H:%M:%S', time.gmtime(end_time - start_time))))
 
-    data.restore()
-
     data.save_fits(data.model, args.outputname+"_model")
     data.save_fits(data.residual, args.outputname+"_residual")
+
+    data.restore()
     data.save_fits(data.restored, args.outputname+"_restored")
 
     # test.moresane(scale_count = 9, major_loop_miter=100, minor_loop_miter=30, tolerance=0.8, \
