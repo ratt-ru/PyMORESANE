@@ -113,8 +113,12 @@ class FitsImage:
         # is false, this simply precomputes the fft of the PSF.
 
         if conv_device=="gpu":
+            if np.all(np.array(self.psf_data_shape)==2*np.array(self.dirty_data_shape)):
+                conv_mode = "linear"
+                psf_subregion_fft = conv.gpu_r2c_fft(self.psf_data, is_gpuarray=False, store_on_gpu=True)
+                psf_data_fft = psf_subregion_fft
 
-            if conv_mode=="circular":
+            elif conv_mode=="circular":
                 psf_subregion_fft = conv.gpu_r2c_fft(psf_subregion, is_gpuarray=False, store_on_gpu=True)
                 if psf_subregion.shape==self.psf_data_shape:
                     psf_data_fft = psf_subregion_fft
@@ -131,8 +135,12 @@ class FitsImage:
                     psf_data_fft = conv.gpu_r2c_fft(psf_data_fft, is_gpuarray=False, store_on_gpu=True)
 
         elif conv_device=="cpu":
+            if np.all(np.array(self.psf_data_shape)==2*np.array(self.dirty_data_shape)):
+                conv_mode = "linear"
+                psf_subregion_fft = np.fft.rfft2(self.psf_data)
+                psf_data_fft = psf_subregion_fft
 
-            if conv_mode=="circular":
+            elif conv_mode=="circular":
                 psf_subregion_fft = np.fft.rfft2(psf_subregion)
                 if psf_subregion.shape==self.psf_data_shape:
                     psf_data_fft = psf_subregion_fft
@@ -506,15 +514,20 @@ class FitsImage:
         """
         This method constructs the restoring beam and then adds the convolution to the residual.
         """
-
         clean_beam, beam_params = beam_fit.beam_fit(self.psf_data, self.psf_hdu_list[0].header)
-        self.restored = np.fft.fftshift(np.fft.irfft2(np.fft.rfft2(self.model)*np.fft.rfft2(clean_beam)))
+
+        if np.all(np.array(self.psf_data_shape)==2*np.array(self.dirty_data_shape)):
+            self.restored = np.fft.fftshift(np.fft.irfft2(np.fft.rfft2(conv.pad_array(self.model))*np.fft.rfft2(clean_beam)))
+            self.restored = self.restored[self.dirty_data_shape[0]/2:-self.dirty_data_shape[0]/2,
+                                          self.dirty_data_shape[1]/2:-self.dirty_data_shape[1]/2]
+        else:
+            self.restored = np.fft.fftshift(np.fft.irfft2(np.fft.rfft2(self.model)*np.fft.rfft2(clean_beam)))
         self.restored += self.residual
         self.restored = self.restored.astype(np.float32)
 
-        self.img_hdu_list[0].header['BMAJ'] = beam_params[0]
-        self.img_hdu_list[0].header['BMIN'] = beam_params[1]
-        self.img_hdu_list[0].header['BPA'] = beam_params[2]
+        self.img_hdu_list[0].header.update('BMAJ',beam_params[0])
+        self.img_hdu_list[0].header.update('BMIN',beam_params[1])
+        self.img_hdu_list[0].header.update('BPA',beam_params[2])
 
     def save_fits(self, data, name):
         """
