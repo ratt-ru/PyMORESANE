@@ -107,54 +107,109 @@ class FitsImage:
                                  slice(self.dirty_data_shape[1]/2-subregion/2, self.dirty_data_shape[1]/2+subregion/2)])
 
         dirty_subregion = self.dirty_data[subregion_slice]
-        psf_subregion = self.psf_data[subregion_slice]
+
+        if np.all(np.array(self.psf_data_shape)==2*np.array(self.dirty_data_shape)):
+            psf_subregion = self.psf_data[self.psf_data_shape[0]/2-subregion/2:self.psf_data_shape[0]/2+subregion/2,
+                                          self.psf_data_shape[1]/2-subregion/2:self.psf_data_shape[1]/2+subregion/2]
+        else:
+            psf_subregion = self.psf_data[subregion_slice]
 
         # The following pre-loads the gpu with the fft of both the full PSF and the subregion of interest. If usegpu
         # is false, this simply precomputes the fft of the PSF.
 
         if conv_device=="gpu":
-            if np.all(np.array(self.psf_data_shape)==2*np.array(self.dirty_data_shape)):
-                conv_mode = "linear"
-                psf_subregion_fft = conv.gpu_r2c_fft(self.psf_data, is_gpuarray=False, store_on_gpu=True)
-                psf_data_fft = psf_subregion_fft
-
-            elif conv_mode=="circular":
-                psf_subregion_fft = conv.gpu_r2c_fft(psf_subregion, is_gpuarray=False, store_on_gpu=True)
-                if psf_subregion.shape==self.psf_data_shape:
-                    psf_data_fft = psf_subregion_fft
-                else:
-                    psf_data_fft = conv.gpu_r2c_fft(self.psf_data, is_gpuarray=False, store_on_gpu=True)
-
-            elif conv_mode=="linear":
-                psf_subregion_fft = conv.pad_array(psf_subregion)
-                psf_subregion_fft = conv.gpu_r2c_fft(psf_subregion_fft, is_gpuarray=False, store_on_gpu=True)
-                if psf_subregion.shape==self.psf_data_shape:
-                    psf_data_fft = psf_subregion_fft
-                else:
-                    psf_data_fft = conv.pad_array(self.psf_data)
+            if conv_mode=="circular":
+                if np.all(np.array(self.psf_data_shape)==2*np.array(self.dirty_data_shape)):
+                    psf_subregion_fft = conv.gpu_r2c_fft(psf_subregion, is_gpuarray=False, store_on_gpu=True)
+                    psf_slice = tuple([slice(self.psf_data_shape[0]/2-self.dirty_data_shape[0]/2, self.psf_data_shape[0]/2+self.dirty_data_shape[0]/2),
+                                       slice(self.psf_data_shape[1]/2-self.dirty_data_shape[1]/2, self.psf_data_shape[1]/2+self.dirty_data_shape[1]/2)])
+                    psf_data_fft = self.psf_data[psf_slice]
                     psf_data_fft = conv.gpu_r2c_fft(psf_data_fft, is_gpuarray=False, store_on_gpu=True)
+                else:
+                    psf_subregion_fft = conv.gpu_r2c_fft(psf_subregion, is_gpuarray=False, store_on_gpu=True)
+                    if psf_subregion.shape==self.psf_data_shape:
+                        psf_data_fft = psf_subregion_fft
+                    else:
+                        psf_data_fft = conv.gpu_r2c_fft(self.psf_data, is_gpuarray=False, store_on_gpu=True)
+
+            if conv_mode=="linear":
+                if np.all(np.array(self.psf_data_shape)==2*np.array(self.dirty_data_shape)):
+                    if np.all(self.dirty_data_shape==subregion):
+                        psf_subregion_fft = conv.gpu_r2c_fft(self.psf_data, is_gpuarray=False, store_on_gpu=True)
+                        psf_data_fft = psf_subregion_fft
+                    else:
+                        psf_slice = tuple([slice(self.psf_data_shape[0]/2-subregion, self.psf_data_shape[0]/2+subregion),
+                                           slice(self.psf_data_shape[1]/2-subregion, self.psf_data_shape[1]/2+subregion)])
+                        psf_subregion_fft = self.psf_data[psf_slice]
+                        psf_subregion_fft = conv.gpu_r2c_fft(psf_subregion_fft, is_gpuarray=False, store_on_gpu=True)
+                        psf_data_fft = conv.gpu_r2c_fft(self.psf_data, is_gpuarray=False, store_on_gpu=True)
+                else:
+                    if np.all(np.array(self.dirty_data_shape)==subregion):
+                        psf_subregion_fft = conv.pad_array(self.psf_data)
+                        psf_subregion_fft = conv.gpu_r2c_fft(psf_subregion_fft, is_gpuarray=False, store_on_gpu=True)
+                        psf_data_fft = psf_subregion_fft
+                    else:
+                        psf_slice = tuple([slice(self.psf_data_shape[0]/2-subregion, self.psf_data_shape[0]/2+subregion),
+                                           slice(self.psf_data_shape[1]/2-subregion, self.psf_data_shape[1]/2+subregion)])
+                        psf_subregion_fft = self.psf_data[psf_slice]
+                        psf_subregion_fft = conv.gpu_r2c_fft(psf_subregion_fft, is_gpuarray=False, store_on_gpu=True)
+                        psf_data_fft = conv.pad_array(self.psf_data)
+                        psf_data_fft = conv.gpu_r2c_fft(psf_data_fft, is_gpuarray=False, store_on_gpu=True)
+
+            # elif conv_mode=="circular":
+            #     psf_subregion_fft = conv.gpu_r2c_fft(psf_subregion, is_gpuarray=False, store_on_gpu=True)
+            #     if psf_subregion.shape==self.psf_data_shape:
+            #         psf_data_fft = psf_subregion_fft
+            #     else:
+            #         psf_data_fft = conv.gpu_r2c_fft(self.psf_data, is_gpuarray=False, store_on_gpu=True)
+            #
+            # elif conv_mode=="linear":
+            #     psf_subregion_fft = conv.pad_array(psf_subregion)
+            #     psf_subregion_fft = conv.gpu_r2c_fft(psf_subregion_fft, is_gpuarray=False, store_on_gpu=True)
+            #     if psf_subregion.shape==self.psf_data_shape:
+            #         psf_data_fft = psf_subregion_fft
+            #     else:
+            #         psf_data_fft = conv.pad_array(self.psf_data)
+            #         psf_data_fft = conv.gpu_r2c_fft(psf_data_fft, is_gpuarray=False, store_on_gpu=True)
 
         elif conv_device=="cpu":
-            if np.all(np.array(self.psf_data_shape)==2*np.array(self.dirty_data_shape)):
-                conv_mode = "linear"
-                psf_subregion_fft = np.fft.rfft2(self.psf_data)
-                psf_data_fft = psf_subregion_fft
-
-            elif conv_mode=="circular":
-                psf_subregion_fft = np.fft.rfft2(psf_subregion)
-                if psf_subregion.shape==self.psf_data_shape:
-                    psf_data_fft = psf_subregion_fft
-                else:
-                    psf_data_fft = np.fft.rfft2(self.psf_data)
-
-            elif conv_mode=="linear":
-                psf_subregion_fft = conv.pad_array(psf_subregion)
-                psf_subregion_fft = np.fft.rfft2(psf_subregion_fft)
-                if psf_subregion.shape==self.psf_data_shape:
-                    psf_data_fft = psf_subregion_fft
-                else:
-                    psf_data_fft = conv.pad_array(self.psf_data)
+            if conv_mode=="circular":
+                if np.all(np.array(self.psf_data_shape)==2*np.array(self.dirty_data_shape)):
+                    psf_subregion_fft = np.fft.rfft2(psf_subregion)
+                    psf_slice = tuple([slice(self.psf_data_shape[0]/2-self.dirty_data_shape[0]/2, self.psf_data_shape[0]/2+self.dirty_data_shape[0]/2),
+                                       slice(self.psf_data_shape[1]/2-self.dirty_data_shape[1]/2, self.psf_data_shape[1]/2+self.dirty_data_shape[1]/2)])
+                    psf_data_fft = self.psf_data[psf_slice]
                     psf_data_fft = np.fft.rfft2(psf_data_fft)
+                else:
+                    psf_subregion_fft = np.fft.rfft2(psf_subregion)
+                    if psf_subregion.shape==self.psf_data_shape:
+                        psf_data_fft = psf_subregion_fft
+                    else:
+                        psf_data_fft = np.fft.rfft2(self.psf_data)
+
+            if conv_mode=="linear":
+                if np.all(np.array(self.psf_data_shape)==2*np.array(self.dirty_data_shape)):
+                    if np.all(self.dirty_data_shape==subregion):
+                        psf_subregion_fft = np.fft.rfft2(self.psf_data)
+                        psf_data_fft = psf_subregion_fft
+                    else:
+                        psf_slice = tuple([slice(self.psf_data_shape[0]/2-subregion, self.psf_data_shape[0]/2+subregion),
+                                           slice(self.psf_data_shape[1]/2-subregion, self.psf_data_shape[1]/2+subregion)])
+                        psf_subregion_fft = self.psf_data[psf_slice]
+                        psf_subregion_fft = np.fft.rfft2(psf_subregion_fft)
+                        psf_data_fft = np.fft.rfft2(self.psf_data)
+                else:
+                    if np.all(np.array(self.dirty_data_shape)==subregion):
+                        psf_subregion_fft = conv.pad_array(self.psf_data)
+                        psf_subregion_fft = np.fft.rfft2(psf_subregion_fft)
+                        psf_data_fft = psf_subregion_fft
+                    else:
+                        psf_slice = tuple([slice(self.psf_data_shape[0]/2-subregion, self.psf_data_shape[0]/2+subregion),
+                                           slice(self.psf_data_shape[1]/2-subregion, self.psf_data_shape[1]/2+subregion)])
+                        psf_subregion_fft = self.psf_data[psf_slice]
+                        psf_subregion_fft = np.fft.rfft2(psf_subregion_fft)
+                        psf_data_fft = conv.pad_array(self.psf_data)
+                        psf_data_fft = np.fft.rfft2(psf_data_fft)
 
         # The following is a call to the first of the IUWT (Isotropic Undecimated Wavelet Transform) functions. This
         # returns the decomposition of the PSF. The norm of each scale is found - these correspond to the energies or
