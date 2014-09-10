@@ -18,11 +18,11 @@ def beam_fit(psf, psf_header):
     else:
         psf_slice = tuple([slice(0, psf.shape[0]),slice(0, psf.shape[1])])
 
-    psf_centre = psf[psf_slice]
+    psf_centre = psf[psf_slice]/np.max(psf[psf_slice])
 
     max_location = np.unravel_index(np.argmax(psf_centre), psf_centre.shape)
 
-    threshold_psf = np.where(psf_centre>0.05, psf_centre, 0)
+    threshold_psf = np.where(psf_centre>0.1, psf_centre, 0)
 
     labelled_psf, labels = ndimage.label(threshold_psf)
 
@@ -56,9 +56,13 @@ def beam_fit(psf, psf_header):
     clean_beam = np.zeros_like(psf)
     clean_beam[psf_slice] = ellipgauss(xyz[:,0:2],opt[0],opt[1],opt[2],opt[3]).reshape(psf_centre.shape,order="C")
 
+    # Experimental - forces the beam to be normalised. This should be redundant, but helps when the PSF is bad.
+
+    clean_beam = clean_beam/np.max(clean_beam)
+
     bmaj = 2*np.sqrt(2*np.log(2))*max(opt[1],opt[2])*psf_header['CDELT1']
     bmin = 2*np.sqrt(2*np.log(2))*min(opt[1],opt[2])*psf_header['CDELT2']
-    bpa = np.degrees(opt[3])%180
+    bpa = np.degrees(opt[3])%180 - 90
 
     beam_params = [abs(bmaj), abs(bmin), bpa]
 
