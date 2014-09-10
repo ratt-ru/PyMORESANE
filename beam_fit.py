@@ -10,7 +10,7 @@ def beam_fit(psf, psf_header):
 
     INPUTS:
     psf         (no default):   Array containing the psf for the image in question.
-    psf_header  (no default):   Header of the psf. Required for scaling.
+    psf_header  (no default):   Header of the psf.
     """
 
     if psf.shape>512:
