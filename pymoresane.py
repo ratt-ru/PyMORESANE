@@ -414,7 +414,7 @@ class FitsImage:
                         min_scale = 0
                         break
 
-                    if (minor_loop_niter>1)&(snr_current<=snr_last):
+                    if (minor_loop_niter>2)&(snr_current<=snr_last):
                         if (snr_current>10.5):
                             logger.info("SNR has decreased - Model has reached ~{}% error - exiting minor loop."\
                                     .format(int(100/np.power(10,snr_current/20))))
