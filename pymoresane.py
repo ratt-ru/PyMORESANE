@@ -45,7 +45,7 @@ class FitsImage:
 
         self.complete = False
         self.model = np.zeros_like(self.dirty_data)
-        self.residual = np.zeros_like(self.dirty_data)
+        self.residual = np.copy(self.dirty_data)
         self.restored = np.zeros_like(self.dirty_data)
 
     def moresane(self, subregion=None, scale_count=None, sigma_level=4, loop_gain=0.1, tolerance=0.75, accuracy=1e-6,
