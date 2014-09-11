@@ -28,11 +28,17 @@ class FitsImage:
         self.img_hdu_list = pyfits.open("{}".format(self.image_name))
         self.psf_hdu_list = pyfits.open("{}".format(self.psf_name))
 
-        self.dirty_data_shape = self.img_hdu_list[0].data.shape[-2:]
-        self.psf_data_shape = self.psf_hdu_list[0].data.shape[-2:]
+        self.img_hdr = self.img_hdu_list[0].header
+        self.psf_hdr = self.psf_hdu_list[0].header
 
-        self.dirty_data = (self.img_hdu_list[0].data[...,:,:]).astype(np.float32).reshape(self.dirty_data_shape)
-        self.psf_data = (self.psf_hdu_list[0].data[...,:,:]).astype(np.float32).reshape(self.psf_data_shape)
+        img_slice = self.handle_input(self.img_hdr)
+        psf_slice = self.handle_input(self.psf_hdr)
+
+        self.dirty_data = (self.img_hdu_list[0].data[img_slice]).astype(np.float32)
+        self.psf_data = (self.psf_hdu_list[0].data[psf_slice]).astype(np.float32)
+
+        self.dirty_data_shape = self.dirty_data.shape
+        self.psf_data_shape = self.psf_data.shape
 
         self.img_hdu_list.close()
         self.psf_hdu_list.close()
@@ -134,9 +140,10 @@ class FitsImage:
 
             if conv_mode=="linear":
                 if np.all(np.array(self.psf_data_shape)==2*np.array(self.dirty_data_shape)):
-                    if np.all(self.dirty_data_shape==subregion):
+                    if np.all(np.array(self.dirty_data_shape)==subregion):
                         psf_subregion_fft = conv.gpu_r2c_fft(self.psf_data, is_gpuarray=False, store_on_gpu=True)
                         psf_data_fft = psf_subregion_fft
+                        logger.info("Using double size PSF.")
                     else:
                         psf_slice = tuple([slice(self.psf_data_shape[0]/2-subregion, self.psf_data_shape[0]/2+subregion),
                                            slice(self.psf_data_shape[1]/2-subregion, self.psf_data_shape[1]/2+subregion)])
@@ -156,22 +163,6 @@ class FitsImage:
                         psf_data_fft = conv.pad_array(self.psf_data)
                         psf_data_fft = conv.gpu_r2c_fft(psf_data_fft, is_gpuarray=False, store_on_gpu=True)
 
-            # elif conv_mode=="circular":
-            #     psf_subregion_fft = conv.gpu_r2c_fft(psf_subregion, is_gpuarray=False, store_on_gpu=True)
-            #     if psf_subregion.shape==self.psf_data_shape:
-            #         psf_data_fft = psf_subregion_fft
-            #     else:
-            #         psf_data_fft = conv.gpu_r2c_fft(self.psf_data, is_gpuarray=False, store_on_gpu=True)
-            #
-            # elif conv_mode=="linear":
-            #     psf_subregion_fft = conv.pad_array(psf_subregion)
-            #     psf_subregion_fft = conv.gpu_r2c_fft(psf_subregion_fft, is_gpuarray=False, store_on_gpu=True)
-            #     if psf_subregion.shape==self.psf_data_shape:
-            #         psf_data_fft = psf_subregion_fft
-            #     else:
-            #         psf_data_fft = conv.pad_array(self.psf_data)
-            #         psf_data_fft = conv.gpu_r2c_fft(psf_data_fft, is_gpuarray=False, store_on_gpu=True)
-
         elif conv_device=="cpu":
             if conv_mode=="circular":
                 if np.all(np.array(self.psf_data_shape)==2*np.array(self.dirty_data_shape)):
@@ -189,9 +180,10 @@ class FitsImage:
 
             if conv_mode=="linear":
                 if np.all(np.array(self.psf_data_shape)==2*np.array(self.dirty_data_shape)):
-                    if np.all(self.dirty_data_shape==subregion):
+                    if np.all(np.array(self.dirty_data_shape)==subregion):
                         psf_subregion_fft = np.fft.rfft2(self.psf_data)
                         psf_data_fft = psf_subregion_fft
+                        logger.info("Using double size PSF.")
                     else:
                         psf_slice = tuple([slice(self.psf_data_shape[0]/2-subregion, self.psf_data_shape[0]/2+subregion),
                                            slice(self.psf_data_shape[1]/2-subregion, self.psf_data_shape[1]/2+subregion)])
@@ -583,6 +575,24 @@ class FitsImage:
         self.img_hdu_list[0].header.update('BMAJ',beam_params[0])
         self.img_hdu_list[0].header.update('BMIN',beam_params[1])
         self.img_hdu_list[0].header.update('BPA',beam_params[2])
+
+    def handle_input(self, input_hdr):
+        """
+        This method tries to ensure that the input data has the correct dimensions.
+
+        INPUTS:
+        input_hdr   (no default)    Header from which data shape is to be extracted.
+        """
+
+        input_slice = input_hdr['NAXIS']*[0]
+
+        for i in range(input_hdr['NAXIS']):
+            if input_hdr['CTYPE%d'%(i+1)].startswith("RA"):
+                    input_slice[-1] = slice(None)
+            if input_hdr['CTYPE%d'%(i+1)].startswith("DEC"):
+                    input_slice[-2] = slice(None)
+
+        return input_slice
 
     def save_fits(self, data, name):
         """
