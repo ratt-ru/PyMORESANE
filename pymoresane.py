@@ -7,6 +7,7 @@ import iuwt_toolbox as tools
 import pymoresane_parser as pparser
 import beam_fit
 import time
+import os
 
 class FitsImage:
     """A class for the manipulation of .fits images - in particular for implementing deconvolution."""
@@ -627,9 +628,15 @@ class FitsImage:
         return logger
 
 if __name__ == "__main__":
-    args = pparser.handle_parser()
+    args, lw_opts = pparser.handle_parser()
 
-    data = FitsImage(args.dirty, args.psf)
+    if args.usevis:
+        make_dirty = pparser.make_lwcommand(lw_opts)[0]
+        make_psf = pparser.make_lwcommand(lw_opts)[2]
+        os.system(make_dirty)
+        os.system(make_psf)
+    else:
+        data = FitsImage(args.dirty, args.psf)
 
     logger = data.make_logger(args.loglevel)
     logger.info("Parameters:\n" + str(args)[10:-1])
