@@ -29,24 +29,30 @@ class FitsImage:
         self.img_hdu_list = pyfits.open("{}".format(self.image_name))
         self.psf_hdu_list = pyfits.open("{}".format(self.psf_name))
 
-        self.dirty_data_shape = self.img_hdu_list[0].data.shape[-2:]
-        self.psf_data_shape = self.psf_hdu_list[0].data.shape[-2:]
+        self.img_hdr = self.img_hdu_list[0].header
+        self.psf_hdr = self.psf_hdu_list[0].header
 
-        self.dirty_data = (self.img_hdu_list[0].data[...,:,:]).astype(np.float32).reshape(self.dirty_data_shape)
-        self.psf_data = (self.psf_hdu_list[0].data[...,:,:]).astype(np.float32).reshape(self.psf_data_shape)
+        img_slice = self.handle_input(self.img_hdr)
+        psf_slice = self.handle_input(self.psf_hdr)
+
+        self.dirty_data = (self.img_hdu_list[0].data[img_slice]).astype(np.float32)
+        self.psf_data = (self.psf_hdu_list[0].data[psf_slice]).astype(np.float32)
+
+        self.dirty_data_shape = self.dirty_data.shape
+        self.psf_data_shape = self.psf_data.shape
 
         self.img_hdu_list.close()
         self.psf_hdu_list.close()
 
         self.complete = False
         self.model = np.zeros_like(self.dirty_data)
-        self.residual = np.zeros_like(self.dirty_data)
+        self.residual = np.copy(self.dirty_data)
         self.restored = np.zeros_like(self.dirty_data)
 
     def moresane(self, subregion=None, scale_count=None, sigma_level=4, loop_gain=0.1, tolerance=0.75, accuracy=1e-6,
                  major_loop_miter=100, minor_loop_miter=30, all_on_gpu=False, decom_mode="ser", core_count=1,
                  conv_device='cpu', conv_mode='linear', extraction_mode='cpu', enforce_positivity=False,
-                 edge_suppression=False, edge_offset=0):
+                 edge_suppression=False, edge_offset=0, use_vis=False, lw_opts=None):
         """
         Primary method for wavelet analysis and subsequent deconvolution.
 
@@ -75,6 +81,8 @@ class FitsImage:
         edge_suppression    (default=False):    Boolean specifier for whether or not the edges are to be suprressed.
         edge_offset         (default=0):        Numeric value for an additional user-specified number of edge pixels
                                                 to be ignored. This is added to the minimum suppression.
+        use_vis             (default=False):    Boolean specifier for whether or not visibilities are to be used.
+        lw_opts             (default=None):     Options for lwimager if the visibilities are to be used.
 
         OUTPUTS:
         self.model          (no default):       Model extracted by the algorithm.
@@ -100,6 +108,11 @@ class FitsImage:
             decom_mode = 'gpu'
             conv_device = 'gpu'
             extraction_mode = 'gpu'
+
+        if use_vis:
+            model_to_vis = pparser.make_lwcommand(lw_opts)[2]
+            make_residual = pparser.make_lwcommand(lw_opts)[3]
+            os.system("rm -r residual.img residual.fits model.img model.fits")
 
         # The following creates arrays with dimensions equal to subregion and containing the values of the dirty
         # image and psf in their central subregions.
@@ -135,9 +148,10 @@ class FitsImage:
 
             if conv_mode=="linear":
                 if np.all(np.array(self.psf_data_shape)==2*np.array(self.dirty_data_shape)):
-                    if np.all(self.dirty_data_shape==subregion):
+                    if np.all(np.array(self.dirty_data_shape)==subregion):
                         psf_subregion_fft = conv.gpu_r2c_fft(self.psf_data, is_gpuarray=False, store_on_gpu=True)
                         psf_data_fft = psf_subregion_fft
+                        logger.info("Using double size PSF.")
                     else:
                         psf_slice = tuple([slice(self.psf_data_shape[0]/2-subregion, self.psf_data_shape[0]/2+subregion),
                                            slice(self.psf_data_shape[1]/2-subregion, self.psf_data_shape[1]/2+subregion)])
@@ -157,22 +171,6 @@ class FitsImage:
                         psf_data_fft = conv.pad_array(self.psf_data)
                         psf_data_fft = conv.gpu_r2c_fft(psf_data_fft, is_gpuarray=False, store_on_gpu=True)
 
-            # elif conv_mode=="circular":
-            #     psf_subregion_fft = conv.gpu_r2c_fft(psf_subregion, is_gpuarray=False, store_on_gpu=True)
-            #     if psf_subregion.shape==self.psf_data_shape:
-            #         psf_data_fft = psf_subregion_fft
-            #     else:
-            #         psf_data_fft = conv.gpu_r2c_fft(self.psf_data, is_gpuarray=False, store_on_gpu=True)
-            #
-            # elif conv_mode=="linear":
-            #     psf_subregion_fft = conv.pad_array(psf_subregion)
-            #     psf_subregion_fft = conv.gpu_r2c_fft(psf_subregion_fft, is_gpuarray=False, store_on_gpu=True)
-            #     if psf_subregion.shape==self.psf_data_shape:
-            #         psf_data_fft = psf_subregion_fft
-            #     else:
-            #         psf_data_fft = conv.pad_array(self.psf_data)
-            #         psf_data_fft = conv.gpu_r2c_fft(psf_data_fft, is_gpuarray=False, store_on_gpu=True)
-
         elif conv_device=="cpu":
             if conv_mode=="circular":
                 if np.all(np.array(self.psf_data_shape)==2*np.array(self.dirty_data_shape)):
@@ -190,9 +188,10 @@ class FitsImage:
 
             if conv_mode=="linear":
                 if np.all(np.array(self.psf_data_shape)==2*np.array(self.dirty_data_shape)):
-                    if np.all(self.dirty_data_shape==subregion):
+                    if np.all(np.array(self.dirty_data_shape)==subregion):
                         psf_subregion_fft = np.fft.rfft2(self.psf_data)
                         psf_data_fft = psf_subregion_fft
+                        logger.info("Using double size PSF.")
                     else:
                         psf_slice = tuple([slice(self.psf_data_shape[0]/2-subregion, self.psf_data_shape[0]/2+subregion),
                                            slice(self.psf_data_shape[1]/2-subregion, self.psf_data_shape[1]/2+subregion)])
@@ -453,7 +452,23 @@ class FitsImage:
 
                 model[subregion_slice] += loop_gain*x
 
-                residual = self.dirty_data - conv.fft_convolve(model, psf_data_fft, conv_device, conv_mode)
+                # INSERT VISIBILITY USE HERE!!!
+                if use_vis:
+                    self.save_fits(model, "model")
+                    os.system("imagecalc in=model.fits out=model.img")
+                    os.system(model_to_vis)
+                    os.system(make_residual)
+                    os.system("image2fits in=residual.img out=residual.fits")
+
+                    residual_hdu = pyfits.open("residual.fits")
+                    residual_hdr = residual_hdu[0].header
+                    residual_slice = self.handle_input(residual_hdr)
+                    residual = residual_hdu[0].data[residual_slice].astype(np.float32)
+                    os.system("mv residual.fits residual{}{}{}.fits".format(scale_count, major_loop_niter, minor_loop_niter))
+                    os.system("rm -r model.fits model.img")
+                    os.system("rm -r residual.fits residual.img")
+                else:
+                    residual = self.dirty_data - conv.fft_convolve(model, psf_data_fft, conv_device, conv_mode)
 
                 # The following assesses whether or not the residual has improved.
 
@@ -467,7 +482,19 @@ class FitsImage:
                 if std_ratio<0:
                     logger.info("Residual has worsened - reverting changes.")
                     model[subregion_slice] -= loop_gain*x
-                    residual = self.dirty_data - conv.fft_convolve(model, psf_data_fft, conv_device, conv_mode)
+                    if use_vis:
+                        self.save_fits(model, "model")
+                        os.system("imagecalc in=model.fits out=model.img")
+                        os.system(model_to_vis)
+                        os.system(make_residual)
+                        os.system("image2fits in=residual.img out=residual.fits")
+
+                        residual_hdu = pyfits.open("residual.fits")
+                        residual_hdr = residual_hdu[0].header
+                        residual_slice = self.handle_input(residual_hdr)
+                        residual = residual_hdu[0].data[residual_slice].astype(np.float32)
+                    else:
+                        residual = self.dirty_data - conv.fft_convolve(model, psf_data_fft, conv_device, conv_mode)
 
                 # The current residual becomes the dirty image for the subsequent iteration.
 
@@ -494,7 +521,7 @@ class FitsImage:
     def moresane_by_scale(self, start_scale=1, stop_scale=20, subregion=None, sigma_level=4, loop_gain=0.1,
                           tolerance=0.75, accuracy=1e-6, major_loop_miter=100, minor_loop_miter=30, all_on_gpu=False,
                           decom_mode="ser", core_count=1, conv_device='cpu', conv_mode='linear', extraction_mode='cpu',
-                          enforce_positivity=False, edge_suppression=False, edge_offset=0):
+                          enforce_positivity=False, edge_suppression=False, edge_offset=0, use_vis=False, lw_opts=None):
         """
         Extension of the MORESANE algorithm. This takes a scale-by-scale approach, attempting to remove all sources
         at the lower scales before moving onto the higher ones. At each step the algorithm may return to previous
@@ -525,6 +552,8 @@ class FitsImage:
         edge_suppression    (default=False):    Boolean specifier for whether or not the edges are to be suprressed.
         edge_offset         (default=0):        Numeric value for an additional user-specified number of edge pixels
                                                 to be ignored. This is added to the minimum suppression.
+        use_vis             (default=False):    Boolean specifier for whether or not visibilities are to be used.
+        lw_opts             (default=None):     Options for lwimager if the visibilities are to be used.
 
         OUTPUTS:
         self.model          (no default):       Model extracted by the algorithm.
@@ -547,7 +576,7 @@ class FitsImage:
                           minor_loop_miter=minor_loop_miter, all_on_gpu=all_on_gpu, decom_mode=decom_mode,
                           core_count=core_count, conv_device=conv_device, conv_mode=conv_mode,
                           extraction_mode=extraction_mode, enforce_positivity=enforce_positivity,
-                          edge_suppression=edge_suppression, edge_offset=edge_offset)
+                          edge_suppression=edge_suppression, edge_offset=edge_offset, use_vis=use_vis, lw_opts=lw_opts)
 
             self.dirty_data = self.residual
 
@@ -584,6 +613,24 @@ class FitsImage:
         self.img_hdu_list[0].header.update('BMAJ',beam_params[0])
         self.img_hdu_list[0].header.update('BMIN',beam_params[1])
         self.img_hdu_list[0].header.update('BPA',beam_params[2])
+
+    def handle_input(self, input_hdr):
+        """
+        This method tries to ensure that the input data has the correct dimensions.
+        INPUTS:
+        input_hdr (no default) Header from which data shape is to be extracted.
+        """
+
+        input_slice = input_hdr['NAXIS']*[0]
+
+        for i in range(input_hdr['NAXIS']):
+            if input_hdr['CTYPE%d'%(i+1)].startswith("RA"):
+                input_slice[-1] = slice(None)
+            if input_hdr['CTYPE%d'%(i+1)].startswith("DEC"):
+                input_slice[-2] = slice(None)
+
+        return input_slice
+
 
     def save_fits(self, data, name):
         """
@@ -632,9 +679,15 @@ if __name__ == "__main__":
 
     if args.usevis:
         make_dirty = pparser.make_lwcommand(lw_opts)[0]
-        make_psf = pparser.make_lwcommand(lw_opts)[2]
+        make_psf = pparser.make_lwcommand(lw_opts)[1]
+        os.system("rm -r dirty.img psf.img dirty.fits psf.fits")
+        print make_dirty
+        print make_psf
         os.system(make_dirty)
         os.system(make_psf)
+        os.system("image2fits in=%s out=dirty.fits"%lw_opts.image)
+        os.system("image2fits in=psf.img out=psf.fits")
+        data = FitsImage("dirty.fits", "psf.fits")
     else:
         data = FitsImage(args.dirty, args.psf)
 
@@ -647,12 +700,12 @@ if __name__ == "__main__":
         data.moresane(args.subregion, args.scalecount, args.sigmalevel, args.loopgain, args.tolerance, args.accuracy,
                       args.majorloopmiter, args.minorloopmiter, args.allongpu, args.decommode, args.corecount,
                       args.convdevice, args.convmode, args.extractionmode, args.enforcepositivity,
-                      args.edgesuppression, args.edgeoffset)
+                      args.edgesuppression, args.edgeoffset, args.usevis, lw_opts)
     else:
         data.moresane_by_scale(args.startscale, args.stopscale, args.subregion, args.sigmalevel, args.loopgain,
                                args.tolerance, args.accuracy, args.majorloopmiter, args.minorloopmiter, args.allongpu,
                                args.decommode,  args.corecount, args.convdevice, args.convmode, args.extractionmode,
-                               args.enforcepositivity, args.edgesuppression, args.edgeoffset)
+                               args.enforcepositivity, args.edgesuppression, args.edgeoffset, args.usevis, lw_opts)
 
     end_time = time.time()
     logger.info("Elapsed time was %s." % (time.strftime('%H:%M:%S', time.gmtime(end_time - start_time))))

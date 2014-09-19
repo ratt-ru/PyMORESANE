@@ -113,7 +113,7 @@ def parser2(args=None):
 
     parser.add_argument("--ms", help="File name and location of the input MS folder.")
 
-    parser.add_argument("--image", help="File name and location of the output .img file.")
+    parser.add_argument("--image", help="File name and location of the output .img file.", default="dirty.img")
 
     parser.add_argument("--operation", help="Operation which lwimager is expected to perform.", default="image")
 
@@ -177,16 +177,22 @@ def make_lwcommand(instr):
     piece = re.compile('wprojplanes=[0-9]*.*')
     chunk = piece.search(psf_command).span()
     psf_command = psf_command.replace(psf_command[chunk[0]:chunk[1]], '')
+    piece = re.compile('image=[0-9a-zA-Z_.]*')
+    chunk = piece.search(psf_command).span()
+    psf_command = psf_command.replace(psf_command[chunk[0]:chunk[1]], 'image=psf.img')
 
     residual_command = dirty_command
     piece = re.compile('data=[a-zA-Z_]*')
     chunk = piece.search(residual_command).span()
     residual_command = residual_command.replace(residual_command[chunk[0]:chunk[1]], 'data=residual')
+    piece = re.compile('image=[0-9a-zA-Z_.]*')
+    chunk = piece.search(residual_command).span()
+    residual_command = residual_command.replace(residual_command[chunk[0]:chunk[1]], 'image=residual.img')
 
     tovis_command = dirty_command
     unnecessary_args = ['weight','robust','npix','cellsize','data','image']
     for i in unnecessary_args:
-            piece = re.compile(i+'=[0-9a-zA-Z_]* ')
+            piece = re.compile(i+'=[0-9a-zA-Z_.]* ')
             chunk = piece.search(tovis_command).span()
             tovis_command = tovis_command.replace(tovis_command[chunk[0]:chunk[1]], '')
 
@@ -197,7 +203,7 @@ def make_lwcommand(instr):
     tovis_command += ' fixed=0'
     tovis_command += ' model=model.img'
 
-    return dirty_command, residual_command, psf_command, tovis_command
+    return dirty_command, psf_command, tovis_command, residual_command
 
 def handle_parser():
     args1, remaining_args = parser1()

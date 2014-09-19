@@ -62,7 +62,7 @@ def beam_fit(psf, psf_header):
 
     bmaj = 2*np.sqrt(2*np.log(2))*max(opt[1],opt[2])*psf_header['CDELT1']
     bmin = 2*np.sqrt(2*np.log(2))*min(opt[1],opt[2])*psf_header['CDELT2']
-    bpa = np.degrees(opt[3])%180 - 90
+    bpa = np.degrees(opt[3])%360 - 90
 
     beam_params = [abs(bmaj), abs(bmin), bpa]
 
