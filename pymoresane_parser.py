@@ -199,9 +199,13 @@ def make_lwcommand(instr):
     piece = re.compile('operation=[a-zA-Z_]*')
     chunk = piece.search(tovis_command).span()
     tovis_command = tovis_command.replace(tovis_command[chunk[0]:chunk[1]], 'operation=csclean')
+    # piece = re.compile('lwimager')
+    # chunk = piece.search(tovis_command).span()
+    # tovis_command = tovis_command.replace(tovis_command[chunk[0]:chunk[1]], 'lwimager1.2')
     tovis_command += ' niter=0'
     tovis_command += ' fixed=0'
     tovis_command += ' model=model.img'
+    tovis_command += ' fillmodel=1'
 
     return dirty_command, psf_command, tovis_command, residual_command
 

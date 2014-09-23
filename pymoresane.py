@@ -49,6 +49,8 @@ class FitsImage:
         self.residual = np.copy(self.dirty_data)
         self.restored = np.zeros_like(self.dirty_data)
 
+        print np.max(self.dirty_data)
+
     def moresane(self, subregion=None, scale_count=None, sigma_level=4, loop_gain=0.1, tolerance=0.75, accuracy=1e-6,
                  major_loop_miter=100, minor_loop_miter=30, all_on_gpu=False, decom_mode="ser", core_count=1,
                  conv_device='cpu', conv_mode='linear', extraction_mode='cpu', enforce_positivity=False,
@@ -454,7 +456,8 @@ class FitsImage:
 
                 # INSERT VISIBILITY USE HERE!!!
                 if use_vis:
-                    self.save_fits(model, "model")
+                    print np.max(model)
+                    self.save_fits(model+self.model, "model")
                     os.system("imagecalc in=model.fits out=model.img")
                     os.system(model_to_vis)
                     os.system(make_residual)
@@ -464,6 +467,7 @@ class FitsImage:
                     residual_hdr = residual_hdu[0].header
                     residual_slice = self.handle_input(residual_hdr)
                     residual = residual_hdu[0].data[residual_slice].astype(np.float32)
+                    os.system("mv model.fits model{}{}{}.fits".format(scale_count, major_loop_niter, minor_loop_niter))
                     os.system("mv residual.fits residual{}{}{}.fits".format(scale_count, major_loop_niter, minor_loop_niter))
                     os.system("rm -r model.fits model.img")
                     os.system("rm -r residual.fits residual.img")
@@ -483,7 +487,7 @@ class FitsImage:
                     logger.info("Residual has worsened - reverting changes.")
                     model[subregion_slice] -= loop_gain*x
                     if use_vis:
-                        self.save_fits(model, "model")
+                        self.save_fits(model+self.model, "model")
                         os.system("imagecalc in=model.fits out=model.img")
                         os.system(model_to_vis)
                         os.system(make_residual)
@@ -681,8 +685,7 @@ if __name__ == "__main__":
         make_dirty = pparser.make_lwcommand(lw_opts)[0]
         make_psf = pparser.make_lwcommand(lw_opts)[1]
         os.system("rm -r dirty.img psf.img dirty.fits psf.fits")
-        print make_dirty
-        print make_psf
+        print pparser.make_lwcommand(lw_opts)
         os.system(make_dirty)
         os.system(make_psf)
         os.system("image2fits in=%s out=dirty.fits"%lw_opts.image)
