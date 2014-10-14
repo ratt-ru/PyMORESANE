@@ -1,4 +1,4 @@
-import argparse
+import argparse,types
 
 def handle_parser():
     """
@@ -13,19 +13,22 @@ def handle_parser():
 
     parser.add_argument("psf", help="File name and location input psf .fits file.")
 
-    parser.add_argument("outputname", help="File name and location of the output model and residual .fits files.")
+    parser.add_argument("-out","--outputname", help="File name and location of the output model and residual .fits files. Don't specify this if you specify model, residual and restored options. If neither this or model, residual or restored are not specified, the output name will be generated using the dirty map file path as a template.")
+    parser.add_argument("--model", help="File name and location of the output model .fits files.")
+    parser.add_argument("--residual", help="File name and location of the output residual .fits files.")
+    parser.add_argument("--restored", help="File name and location of the output restored .fits files.")
 
     parser.add_argument("-sr", "--singlerun", help="Specify whether pymoresane is to be run in scale-by-scale mode or "
                                                    "in single-run mode. Scale-by-scale is usually the better choice."
                                                    , action="store_true")
 
     parser.add_argument("-sbr", "--subregion", help="Specify pixel width of the central region of the dirty .fits "
-                                                   "which is to be deconvolved.", default=None, type=int)
+                                                   "which is to be deconvolved.", default=None)
 
     parser.add_argument("-sc", "--scalecount", help="Specify the maximum number of wavelet scales which the algorithm "
                                                     "is to consider. Only applies in single-run mode. For "
                                                     "scale-by-scale mode, use --startscale and --stopscale"
-                                                    , default=None,type=int)
+                                                    , default=None)
 
     parser.add_argument("-sts", "--startscale", help="Specify first scale to consider in the scale-by-scale case. "
                                                      "Should be 1 in almost all cases.", default=1, type=int)
@@ -36,7 +39,7 @@ def handle_parser():
 
     parser.add_argument("-sl", "--sigmalevel", help="Specify the sigma level at which the thresholding of the wavelet "
                                                     "coefficients is to be performed. May be used to reduce false "
-                                                    "detections.", default=4, type=int)
+                                                    "detections.", default=4, type=float)
 
     parser.add_argument("-lg", "--loopgain", help="Specify the loop gain for the deconvolution step."
                                                   , default=0.2, type=float)
@@ -93,4 +96,10 @@ def handle_parser():
     parser.add_argument("-ll", "--loglevel", help="Specify logging level.", default="INFO"
                                                   , choices=["DEBUG","INFO", "WARNING", "ERROR","CRITICAL"])
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    for arg in 'scalecount subregion'.split():
+      val = getattr(args,arg)
+      if val: val = eval(val)
+      if isinstance(val,(types.NoneType,int)): setattr(args,arg,val)
+      else : raise TypeError('Option "%s" has to be either an int or None'%arg)
+    return args
