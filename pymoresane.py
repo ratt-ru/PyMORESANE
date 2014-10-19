@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import logging
 import pyfits
 import numpy as np
@@ -7,11 +8,12 @@ import iuwt_toolbox as tools
 import pymoresane_parser as pparser
 import beam_fit
 import time
+import os,sys
 
 class FitsImage:
     """A class for the manipulation of .fits images - in particular for implementing deconvolution."""
 
-    def __init__(self, image_name, psf_name):
+    def __init__(self, image_name, psf_name=None,imageData=None,psfData=None,imageHdr=None,psfHdr=None):
         """
         Opens the original .fits images specified by imagename and psfname and stores their contents in appropriate
         variables for later use. Also initialises variables to store the sizes of the psf and dirty image as these
@@ -25,23 +27,34 @@ class FitsImage:
         self.image_name = image_name
         self.psf_name = psf_name
 
-        self.img_hdu_list = pyfits.open("{}".format(self.image_name))
-        self.psf_hdu_list = pyfits.open("{}".format(self.psf_name))
+        self.imageData = imageData
+        self.psfData = psfData
+        self.imageHdr = imageHdr
+        self.psfHdr = psfHdr
+        if None not in [self.imageData,self.psfData,self.imageHdr,self.psfHdr]:
+          self.dirty_data = self.imageData
+          self.img_hdr = self.imageHdr
+          self.psf_data = self.psfData
+          self.psf_hdr = self.psfHdr
+        elif self.psf_name :
+          self.img_hdu_list = pyfits.open("{}".format(self.image_name))
+          self.psf_hdu_list = pyfits.open("{}".format(self.psf_name))
 
-        self.img_hdr = self.img_hdu_list[0].header
-        self.psf_hdr = self.psf_hdu_list[0].header
+          self.img_hdr = self.img_hdu_list[0].header
+          self.psf_hdr = self.psf_hdu_list[0].header
 
-        img_slice = self.handle_input(self.img_hdr)
-        psf_slice = self.handle_input(self.psf_hdr)
+          img_slice = self.handle_input(self.img_hdr)
+          psf_slice = self.handle_input(self.psf_hdr)
 
-        self.dirty_data = (self.img_hdu_list[0].data[img_slice]).astype(np.float32)
-        self.psf_data = (self.psf_hdu_list[0].data[psf_slice]).astype(np.float32)
+          self.dirty_data = (self.img_hdu_list[0].data[img_slice]).astype(np.float32)
+          self.psf_data = (self.psf_hdu_list[0].data[psf_slice]).astype(np.float32)
 
+
+          self.img_hdu_list.close()
+          self.psf_hdu_list.close()
+ 
         self.dirty_data_shape = self.dirty_data.shape
         self.psf_data_shape = self.psf_data.shape
-
-        self.img_hdu_list.close()
-        self.psf_hdu_list.close()
 
         self.complete = False
         self.model = np.zeros_like(self.dirty_data)
@@ -561,7 +574,7 @@ class FitsImage:
         """
         This method constructs the restoring beam and then adds the convolution to the residual.
         """
-        clean_beam, beam_params = beam_fit.beam_fit(self.psf_data, self.psf_hdu_list[0].header)
+        clean_beam, beam_params = beam_fit.beam_fit(self.psf_data, self.psf_hdr)
 
         if np.all(np.array(self.psf_data_shape)==2*np.array(self.dirty_data_shape)):
             self.restored = np.fft.fftshift(np.fft.irfft2(np.fft.rfft2(conv.pad_array(self.model))*np.fft.rfft2(clean_beam)))
@@ -572,9 +585,9 @@ class FitsImage:
         self.restored += self.residual
         self.restored = self.restored.astype(np.float32)
 
-        self.img_hdu_list[0].header.update('BMAJ',beam_params[0])
-        self.img_hdu_list[0].header.update('BMIN',beam_params[1])
-        self.img_hdu_list[0].header.update('BPA',beam_params[2])
+        self.img_hdr.update('BMAJ',beam_params[0])
+        self.img_hdr.update('BMIN',beam_params[1])
+        self.img_hdr.update('BPA',beam_params[2])
 
     def handle_input(self, input_hdr):
         """
@@ -593,7 +606,7 @@ class FitsImage:
                     input_slice[-2] = slice(None)
 
         return input_slice
-
+    
     def save_fits(self, data, name):
         """
         This method simply saves the model components and the residual.
@@ -603,7 +616,7 @@ class FitsImage:
         name    (no default)    File name for new .fits file. Will overwrite.
         """
         data = data.reshape(1, 1, data.shape[0], data.shape[0])
-        new_file = pyfits.PrimaryHDU(data,self.img_hdu_list[0].header)
+        new_file = pyfits.PrimaryHDU(data,self.img_hdr)
         new_file.writeto(name, clobber=True)
 
     def make_logger(self, level="INFO"):
@@ -635,57 +648,148 @@ class FitsImage:
         logger.addHandler(ch)
 
         return logger
+#--------------------------------------------------------------------------------
+def fitsInfo(fits,return_data=False):
+  hdr = pyfits.open(fits)[0].header
+  if return_data: data = pyfits.open(fits)[0].data
+  naxis = hdr['NAXIS']
+  freq_ind = 0
+  for i in range(1,naxis+1):
+    if hdr['CTYPE%d'%i].upper().startswith('FREQ'): freq_ind = i
+  if freq_ind==0: return (None,None),naxis,(None,None)
+  nchan = hdr['NAXIS%d'%freq_ind]
+  if return_data not in[False,None] : return (freq_ind,nchan),naxis,(data,hdr)
+  else: return (freq_ind,nchan),naxis,(None,None)
+
+def combine_fits(fitslist,outname='combined.fits',keep_old=False):
+  """ Combine a list of fits files into a single cube """
+  freqIndex = 0
+  nchan = 0
+  hdu = pyfits.open(fitslist[0])[0]
+  hdr = hdu.header
+  naxis = hdr['NAXIS']
+  shape = list(hdu.data.shape)
+  for key,val in hdr.iteritems():
+    if key.startswith('CTYPE'):
+      if val.upper().startswith('FREQ'): freqIndex = int(key[5:])
+  if freqIndex ==0: raise SystemError('At least one of the fits files has no frequency information in the header. Cannot combine fits images.')
+  crval = hdr['CRVAL%d'%freqIndex]
+  images = []
+  for fits in fitslist:
+    hdu = pyfits.open(fits)[0]
+    hdr = hdu.header
+    temp_crval = hdr['CRVAL%d'%freqIndex]
+    nchan += hdr['NAXIS%d'%freqIndex]
+    if temp_crval < crval : crval = temp_crval
+    images.append(hdu.data)
+  ind = naxis - freqIndex # numpy array indexing differnt from FITS
+  hdr['CRVAL%d'%freqIndex] = crval
+  shape[ind] = nchan
+  new_data = np.reshape(np.array(images),shape)
+  pyfits.writeto(outname,new_data,hdr,clobber=True)
+  if keep_old is False:
+    for fits in fitslist:
+      os.system('rm -rf %s'%fits)
+#--------------------------------------------------------------------------------
+
 
 if __name__ == "__main__":
-    args = pparser.handle_parser()
+  args = pparser.handle_parser()
 
-    data = FitsImage(args.dirty, args.psf)
+  out_template = args.outputname or args.dirty
+  model_image = args.model_image or out_template.replace('.fits','.model.fits')
+  residual_image = args.residual_image or out_template.replace('.fits','.residual.fits')
+  restored_image = args.restored_image or out_template.replace('.fits','.restored.fits')
 
-    logger = data.make_logger(args.loglevel)
-    logger.info("Parameters:\n" + str(args)[10:-1])
 
-    start_time = time.time()
-
+  def run_moresane(data):
     if args.singlerun:
-        data.moresane(args.subregion, args.scalecount, args.sigmalevel, args.loopgain, args.tolerance, args.accuracy,
-                      args.majorloopmiter, args.minorloopmiter, args.allongpu, args.decommode, args.corecount,
-                      args.convdevice, args.convmode, args.extractionmode, args.enforcepositivity,
-                      args.edgesuppression, args.edgeoffset)
+      data.moresane(args.subregion, args.scalecount, args.sigmalevel, args.loopgain, args.tolerance, args.accuracy,
+                    args.majorloopmiter, args.minorloopmiter, args.allongpu, args.decommode, args.corecount,
+                    args.convdevice, args.convmode, args.extractionmode, args.enforcepositivity,
+                    args.edgesuppression, args.edgeoffset)
     else:
-        data.moresane_by_scale(args.startscale, args.stopscale, args.subregion, args.sigmalevel, args.loopgain,
+      data.moresane_by_scale(args.startscale, args.stopscale, args.subregion, args.sigmalevel, args.loopgain,
                                args.tolerance, args.accuracy, args.majorloopmiter, args.minorloopmiter, args.allongpu,
                                args.decommode,  args.corecount, args.convdevice, args.convmode, args.extractionmode,
                                args.enforcepositivity, args.edgesuppression, args.edgeoffset)
 
-    end_time = time.time()
-    logger.info("Elapsed time was %s." % (time.strftime('%H:%M:%S', time.gmtime(end_time - start_time))))
 
-    out_template = args.outputname or args.dirty
-    model_image = args.model or out_template.replace('.fits','.model.fits')
-    residual_image = args.residual or out_template.replace('.fits','.residual.fits')
-    restored_image = args.restored or out_template.replace('.fits','.restored.fits')
+
+  start_time = time.time()
+
+  dirty,psf = args.dirty,args.psf
+  can_do_multi_chan = True
+  (freq_axis_dirty,dirty_nchan),naxis_dirty,(dirty_data,dirty_hdr) = fitsInfo(dirty,return_data=True)
+  if freq_axis_dirty == None: can_do_multi_chan = False
+  (freq_axis_psf,psf_nchan),naxis_psf,(psf_data,psf_hdr) = fitsInfo(psf,return_data=True)
+  if freq_axis_psf == None: can_do_multi_chan = False
+
+  if np.logical_and(dirty_nchan==psf_nchan,psf_nchan>1) and can_do_multi_chan:
+    print 'Dirty map and PSF map have %d frequency channels. Each channel will be deconvolved separately'
+    # Get image data for each frequency slice, then send moresane
+    ind_dirty = naxis_dirty - freq_axis_dirty
+    ind_psf = naxis_psf - freq_axis_psf
+    image_dirty = naxis_dirty*[0]
+    image_psf = naxis_psf*[0]
+    image_dirty[-2:] = [slice(None)]*2
+    image_psf[-2:] = [slice(None)]*2
+    # store moresane output images here, and combine them into a single cube later
+    model_images,residual_images,restored_images = [],[],[] 
+    for i in range(dirty_nchan):
+      image_dirty[ind_dirty] = i
+      image_psf[ind_psf] = i
+      imageData = dirty_data[image_dirty]
+      psfData = psf_data[image_psf]
+
+      # Pass the full image hdr for each frequency slice. This header will be header for the combined fits
+      # as well, with the frequency axis modified according,y
+      data = FitsImage(args.dirty,imageData=imageData,imageHdr=dirty_hdr,psfData=psfData,psfHdr=psf_hdr)
+
+      logger = data.make_logger(args.loglevel)
+      logger.info("Parameters:\n" + str(args)[10:-1])
+   
+      run_moresane(data)      
+    
+      label = str(i).zfill(4)
+      # add labels to images in multichannel mode
+      model_im = out_template.replace('.fits','.model.%s.fits'%label) 
+      residual_im = out_template.replace('.fits','.residual.%s.fits'%label) 
+      restored_im = out_template.replace('.fits','.restored.%s.fits'%label) 
+
+      data.save_fits(data.model, model_im)
+      model_images.append(model_im)
+
+      data.save_fits(data.residual, residual_im)
+      residual_images.append(residual_im)
+
+      data.restore()
+      data.save_fits(data.restored, restored_im)
+      restored_images.append(restored_im)
+    # combine images into a single cube
+    combine_fits(model_images,keep_old=False,outname=model_image)
+    combine_fits(residual_images,keep_old=False,outname=residual_image)
+    combine_fits(restored_images,keep_old=False,outname=restored_image)
+  elif dirty_nchan==1:
+    data = FitsImage(args.dirty, args.psf)
+
+    logger = data.make_logger(args.loglevel)
+    logger.info("Parameters:\n" + str(args)[10:-1])
+    run_moresane(data)
 
     data.save_fits(data.model, model_image)
     data.save_fits(data.residual, residual_image)
 
     data.restore()
     data.save_fits(data.restored, restored_image)
-
-    # test.moresane(scale_count = 9, major_loop_miter=100, minor_loop_miter=30, tolerance=0.8, \
-    #                 conv_mode="linear", accuracy=1e-6, loop_gain=0.2, enforce_positivity=True, sigma_level=5,
-    #                 decom_mode="gpu", extraction_mode="gpu", conv_device="gpu")
-    # test.moresane_by_scale(major_loop_miter=100, minor_loop_miter=50, tolerance=0.75,
-    #                 conv_mode="circular", accuracy=1e-6, loop_gain=0.3, enforce_positivity=True, sigma_level=4,
-    #                 all_on_gpu=True, edge_suppression=True)
-    # test.moresane_by_scale(subregion=512, major_loop_miter=100, minor_loop_miter=30, tolerance=0.7,
-    #                 conv_mode="circular", accuracy=1e-6, loop_gain=0.2, enforce_positivity=True, sigma_level=4)
-
-
-
-
-
-
-
-
-
-
+    
+  end_time = time.time()
+  logger.info("Elapsed time was %s." % (time.strftime('%H:%M:%S', time.gmtime(end_time - start_time))))
+  # test.moresane(scale_count = 9, major_loop_miter=100, minor_loop_miter=30, tolerance=0.8, \
+  #                 conv_mode="linear", accuracy=1e-6, loop_gain=0.2, enforce_positivity=True, sigma_level=5,
+  #                 decom_mode="gpu", extraction_mode="gpu", conv_device="gpu")
+  # test.moresane_by_scale(major_loop_miter=100, minor_loop_miter=50, tolerance=0.75,
+  #                 conv_mode="circular", accuracy=1e-6, loop_gain=0.3, enforce_positivity=True, sigma_level=4,
+  #                 all_on_gpu=True, edge_suppression=True)
+  # test.moresane_by_scale(subregion=512, major_loop_miter=100, minor_loop_miter=30, tolerance=0.7,
+  #                 conv_mode="circular", accuracy=1e-6, loop_gain=0.2, enforce_positivity=True, sigma_level=4)

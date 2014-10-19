@@ -14,9 +14,9 @@ def handle_parser():
     parser.add_argument("psf", help="File name and location input psf .fits file.")
 
     parser.add_argument("-out","--outputname", help="File name and location of the output model and residual .fits files. Don't specify this if you specify model, residual and restored options. If neither this or model, residual or restored are not specified, the output name will be generated using the dirty map file path as a template.")
-    parser.add_argument("--model", help="File name and location of the output model .fits files.")
-    parser.add_argument("--residual", help="File name and location of the output residual .fits files.")
-    parser.add_argument("--restored", help="File name and location of the output restored .fits files.")
+    parser.add_argument("--model-image",dest='model_image', help="File name and location of the output model .fits files.")
+    parser.add_argument("--residual-image",dest='residual_image', help="File name and location of the output residual .fits files.")
+    parser.add_argument("--restored-image",dest='restored_image', help="File name and location of the output restored .fits files.")
 
     parser.add_argument("-sr", "--singlerun", help="Specify whether pymoresane is to be run in scale-by-scale mode or "
                                                    "in single-run mode. Scale-by-scale is usually the better choice."
