@@ -90,8 +90,11 @@ def handle_parser():
                                                          , action="store_true")
 
     parser.add_argument("-eo", "--edgeoffset", help="Specify an additional offset along the edges. May reduce false "
-                                                    "detections caused by convolution artifacts."
                                                     , default=0, type=int)
+    parser.add_argument("-mfs", "--mfs", help="Make MFS map. This comes with a spectral index map foo-spi.fits who's second"
+                                               " plane is an error map for the spi fit",action='store_true')
+    parser.add_argument("-spc", "--spec-curv",dest='spec_curv', 
+                        help="Fit for spectral curvature as well a spectral index",action='store_true')
 
     parser.add_argument("-ll", "--loglevel", help="Specify logging level.", default="INFO"
                                                   , choices=["DEBUG","INFO", "WARNING", "ERROR","CRITICAL"])

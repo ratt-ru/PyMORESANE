@@ -650,141 +650,172 @@ class FitsImage:
         return logger
 #--------------------------------------------------------------------------------
 def fitsInfo(fits,return_data=False):
-  hdr = pyfits.open(fits)[0].header
-  if return_data: data = pyfits.open(fits)[0].data
-  naxis = hdr['NAXIS']
-  freq_ind = 0
-  for i in range(1,naxis+1):
-    if hdr['CTYPE%d'%i].upper().startswith('FREQ'): freq_ind = i
-  if freq_ind==0: return (None,None),naxis,(None,None)
-  nchan = hdr['NAXIS%d'%freq_ind]
-  if return_data not in[False,None] : return (freq_ind,nchan),naxis,(data,hdr)
-  else: return (freq_ind,nchan),naxis,(None,None)
+    """ Get some basic finfo from a FITS file """
+    hdr = pyfits.open(fits)[0].header
+    if return_data: 
+        data = pyfits.open(fits)[0].data
+    naxis = hdr['NAXIS']
+    freq_ind = 0
+
+    for i in range(1,naxis+1):
+        if hdr['CTYPE%d'%i].upper().startswith('FREQ'): 
+            freq_ind = i
+    if freq_ind==0: 
+        return (None,None),naxis,(None,None)
+
+    nchan = hdr['NAXIS%d'%freq_ind]
+
+    if return_data not in[False,None] : 
+        return (freq_ind,nchan),naxis,(data,hdr)
+    else: 
+        return (freq_ind,nchan),naxis,(None,None)
 
 def combine_fits(fitslist,outname='combined.fits',keep_old=False):
-  """ Combine a list of fits files into a single cube """
-  freqIndex = 0
-  nchan = 0
-  hdu = pyfits.open(fitslist[0])[0]
-  hdr = hdu.header
-  naxis = hdr['NAXIS']
-  shape = list(hdu.data.shape)
-  for key,val in hdr.iteritems():
-    if key.startswith('CTYPE'):
-      if val.upper().startswith('FREQ'): freqIndex = int(key[5:])
-  if freqIndex ==0: raise SystemError('At least one of the fits files has no frequency information in the header. Cannot combine fits images.')
-  crval = hdr['CRVAL%d'%freqIndex]
-  images = []
-  for fits in fitslist:
-    hdu = pyfits.open(fits)[0]
+    """ Combine a list of fits files into a single cube """
+
+    freqIndex = 0
+    nchan = 0
+    hdu = pyfits.open(fitslist[0])[0]
     hdr = hdu.header
-    temp_crval = hdr['CRVAL%d'%freqIndex]
-    nchan += hdr['NAXIS%d'%freqIndex]
-    if temp_crval < crval : crval = temp_crval
-    images.append(hdu.data)
-  ind = naxis - freqIndex # numpy array indexing differnt from FITS
-  hdr['CRVAL%d'%freqIndex] = crval
-  shape[ind] = nchan
-  new_data = np.reshape(np.array(images),shape)
-  pyfits.writeto(outname,new_data,hdr,clobber=True)
-  if keep_old is False:
+    naxis = hdr['NAXIS']
+    shape = list(hdu.data.shape)
+
+    for key,val in hdr.iteritems():
+        if key.startswith('CTYPE'):
+            if val.upper().startswith('FREQ'): freqIndex = int(key[5:])
+    if freqIndex ==0: 
+        raise SystemError('At least one of the fits files has no\
+frequency information in the header. Cannot combine fits images.')
+    crval = hdr['CRVAL%d'%freqIndex]
+    images = []
+
     for fits in fitslist:
-      os.system('rm -rf %s'%fits)
+        hdu = pyfits.open(fits)[0]
+        hdr = hdu.header
+        temp_crval = hdr['CRVAL%d'%freqIndex]
+        nchan += hdr['NAXIS%d'%freqIndex]
+        if temp_crval < crval : 
+            crval = temp_crval
+        images.append(hdu.data)
+
+    ind = naxis - freqIndex # numpy array indexing differnt from FITS
+    hdr['CRVAL%d'%freqIndex] = crval
+    shape[ind] = nchan
+    new_data = np.reshape(np.array(images),shape)
+    pyfits.writeto(outname,new_data,hdr,clobber=True)
+    if keep_old is False:
+        for fits in fitslist:
+            os.system('rm -rf %s'%fits)
 #--------------------------------------------------------------------------------
 
 
 if __name__ == "__main__":
-  args = pparser.handle_parser()
-
-  out_template = args.outputname or args.dirty
-  model_image = args.model_image or out_template.replace('.fits','.model.fits')
-  residual_image = args.residual_image or out_template.replace('.fits','.residual.fits')
-  restored_image = args.restored_image or out_template.replace('.fits','.restored.fits')
-
-
-  def run_moresane(data):
-    if args.singlerun:
-      data.moresane(args.subregion, args.scalecount, args.sigmalevel, args.loopgain, args.tolerance, args.accuracy,
-                    args.majorloopmiter, args.minorloopmiter, args.allongpu, args.decommode, args.corecount,
-                    args.convdevice, args.convmode, args.extractionmode, args.enforcepositivity,
-                    args.edgesuppression, args.edgeoffset)
-    else:
-      data.moresane_by_scale(args.startscale, args.stopscale, args.subregion, args.sigmalevel, args.loopgain,
-                               args.tolerance, args.accuracy, args.majorloopmiter, args.minorloopmiter, args.allongpu,
-                               args.decommode,  args.corecount, args.convdevice, args.convmode, args.extractionmode,
-                               args.enforcepositivity, args.edgesuppression, args.edgeoffset)
-
-
-
-  start_time = time.time()
-
-  dirty,psf = args.dirty,args.psf
-  can_do_multi_chan = True
-  (freq_axis_dirty,dirty_nchan),naxis_dirty,(dirty_data,dirty_hdr) = fitsInfo(dirty,return_data=True)
-  if freq_axis_dirty == None: can_do_multi_chan = False
-  (freq_axis_psf,psf_nchan),naxis_psf,(psf_data,psf_hdr) = fitsInfo(psf,return_data=True)
-  if freq_axis_psf == None: can_do_multi_chan = False
-
-  if np.logical_and(dirty_nchan==psf_nchan,psf_nchan>1) and can_do_multi_chan:
-    print 'Dirty map and PSF map have %d frequency channels. Each channel will be deconvolved separately'
-    # Get image data for each frequency slice, then send moresane
-    ind_dirty = naxis_dirty - freq_axis_dirty
-    ind_psf = naxis_psf - freq_axis_psf
-    image_dirty = naxis_dirty*[0]
-    image_psf = naxis_psf*[0]
-    image_dirty[-2:] = [slice(None)]*2
-    image_psf[-2:] = [slice(None)]*2
-    # store moresane output images here, and combine them into a single cube later
-    model_images,residual_images,restored_images = [],[],[] 
-    for i in range(dirty_nchan):
-      image_dirty[ind_dirty] = i
-      image_psf[ind_psf] = i
-      imageData = dirty_data[image_dirty]
-      psfData = psf_data[image_psf]
-
-      # Pass the full image hdr for each frequency slice. This header will be header for the combined fits
-      # as well, with the frequency axis modified according,y
-      data = FitsImage(args.dirty,imageData=imageData,imageHdr=dirty_hdr,psfData=psfData,psfHdr=psf_hdr)
-
-      logger = data.make_logger(args.loglevel)
-      logger.info("Parameters:\n" + str(args)[10:-1])
+    args = pparser.handle_parser()
    
-      run_moresane(data)      
+    # Set up names for output images
+    out_template = args.outputname or args.dirty
+    model_image = args.model_image or out_template.replace('.fits','.model.fits')
+    residual_image = args.residual_image or out_template.replace('.fits','.residual.fits')
+    restored_image = args.restored_image or out_template.replace('.fits','.restored.fits')
+
+    def run_moresane(data):
+        if args.singlerun:
+            data.moresane(args.subregion, args.scalecount, args.sigmalevel, 
+                          args.loopgain, args.tolerance, args.accuracy,
+                          args.majorloopmiter, args.minorloopmiter, 
+                          args.allongpu, args.decommode, args.corecount,
+                          args.convdevice, args.convmode, 
+                          args.extractionmode, args.enforcepositivity,
+                          args.edgesuppression, args.edgeoffset)
+        else:
+            data.moresane_by_scale(args.startscale, args.stopscale, 
+                                   args.subregion, args.sigmalevel, args.loopgain,
+                                   args.tolerance,args.accuracy, args.majorloopmiter, 
+                                   args.minorloopmiter, args.allongpu, args.decommode,  
+                                   args.corecount, args.convdevice, args.convmode,
+                                   args.extractionmode, args.enforcepositivity, 
+                                   args.edgesuppression, args.edgeoffset)
+
+    start_time = time.time()
+
+    dirty,psf = args.dirty,args.psf
+    can_do_multi_chan = True
+
+    (freq_axis_dirty,dirty_nchan),naxis_dirty,(dirty_data,dirty_hdr) = fitsInfo(dirty,return_data=True)
+    if freq_axis_dirty == None: can_do_multi_chan = False
+
+    (freq_axis_psf,psf_nchan),naxis_psf,(psf_data,psf_hdr) = fitsInfo(psf,return_data=True)
+    if freq_axis_psf == None: can_do_multi_chan = False
+
+    if np.logical_and(dirty_nchan==psf_nchan,psf_nchan>1) and can_do_multi_chan:
+        print 'Dirty map and PSF map have %d frequency channels. Each channel will be deconvolved separately'
+        # Get image data for each frequency slice, then send moresane
+        ind_dirty = naxis_dirty - freq_axis_dirty
+        ind_psf = naxis_psf - freq_axis_psf
+        image_dirty = naxis_dirty*[0]
+        image_psf = naxis_psf*[0]
+        image_dirty[-2:] = [slice(None)]*2
+        image_psf[-2:] = [slice(None)]*2
+        # store moresane output images here, and combine them into a single cube later
+        model_images,residual_images,restored_images = [],[],[] 
+
+        for i in range(dirty_nchan):
+            image_dirty[ind_dirty] = i
+            image_psf[ind_psf] = i
+            imageData = dirty_data[image_dirty]
+            psfData = psf_data[image_psf]
+
+            # Pass the full image hdr for each frequency slice. This header will be header for the combined fits
+            # as well, with the frequency axis modified according,y
+            data = FitsImage(args.dirty,imageData=imageData,imageHdr=dirty_hdr,psfData=psfData,psfHdr=psf_hdr)
+
+            logger = data.make_logger(args.loglevel)
+            logger.info("Parameters:\n" + str(args)[10:-1])
+   
+            run_moresane(data)      
     
-      label = str(i).zfill(4)
-      # add labels to images in multichannel mode
-      model_im = out_template.replace('.fits','.model.%s.fits'%label) 
-      residual_im = out_template.replace('.fits','.residual.%s.fits'%label) 
-      restored_im = out_template.replace('.fits','.restored.%s.fits'%label) 
+            label = str(i).zfill(4)
+            # add labels to images in multichannel mode
+            model_im = out_template.replace('.fits','.model.%s.fits'%label) 
+            residual_im = out_template.replace('.fits','.residual.%s.fits'%label) 
+            restored_im = out_template.replace('.fits','.restored.%s.fits'%label) 
 
-      data.save_fits(data.model, model_im)
-      model_images.append(model_im)
+            data.save_fits(data.model, model_im)
+            model_images.append(model_im)
 
-      data.save_fits(data.residual, residual_im)
-      residual_images.append(residual_im)
+            data.save_fits(data.residual, residual_im)
+            residual_images.append(residual_im)
 
-      data.restore()
-      data.save_fits(data.restored, restored_im)
-      restored_images.append(restored_im)
-    # combine images into a single cube
-    combine_fits(model_images,keep_old=False,outname=model_image)
-    combine_fits(residual_images,keep_old=False,outname=residual_image)
-    combine_fits(restored_images,keep_old=False,outname=restored_image)
-  elif dirty_nchan==1:
-    data = FitsImage(args.dirty, args.psf)
+            data.restore()
+            data.save_fits(data.restored, restored_im)
+            restored_images.append(restored_im)
 
-    logger = data.make_logger(args.loglevel)
-    logger.info("Parameters:\n" + str(args)[10:-1])
-    run_moresane(data)
+        # combine images into a single cube
+        combine_fits(model_images,keep_old=False,outname=model_image)
+        combine_fits(residual_images,keep_old=False,outname=residual_image)
+        combine_fits(restored_images,keep_old=False,outname=restored_image)
+        
+        # make MFS and spi and/or spc maps
+        if args.mfs:
+            import specfit 
+            specfit.get_spec(restored_image,spi=True,spc=args.spec_curv)
 
-    data.save_fits(data.model, model_image)
-    data.save_fits(data.residual, residual_image)
+    # single channel case
+    elif dirty_nchan==1:
+        data = FitsImage(args.dirty, args.psf)
 
-    data.restore()
-    data.save_fits(data.restored, restored_image)
+        logger = data.make_logger(args.loglevel)
+        logger.info("Parameters:\n" + str(args)[10:-1])
+        run_moresane(data)
+
+        data.save_fits(data.model, model_image)
+        data.save_fits(data.residual, residual_image)
+
+        data.restore()
+        data.save_fits(data.restored, restored_image)
     
-  end_time = time.time()
-  logger.info("Elapsed time was %s." % (time.strftime('%H:%M:%S', time.gmtime(end_time - start_time))))
+    end_time = time.time()
+    logger.info("Elapsed time was %s." % (time.strftime('%H:%M:%S', time.gmtime(end_time - start_time))))
   # test.moresane(scale_count = 9, major_loop_miter=100, minor_loop_miter=30, tolerance=0.8, \
   #                 conv_mode="linear", accuracy=1e-6, loop_gain=0.2, enforce_positivity=True, sigma_level=5,
   #                 decom_mode="gpu", extraction_mode="gpu", conv_device="gpu")
