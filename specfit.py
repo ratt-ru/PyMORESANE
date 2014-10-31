@@ -17,7 +17,7 @@ def fit_func(freqs,freq0,a=0,b=0):
     return lfr**(a + b*np.log(lfr))
 
 def get_spec(fitsname,spi=True,spc=False,sp2=False,start=0,end=0,
-             sigma_level=20,outname_spi=None,outname_spc=None):
+             sigma_level=10,outname_spi=None,outname_spc=None):
     """ Get spectral line info """
     hdu = pyfits.open(fitsname)[0]
     data = hdu.data
@@ -65,11 +65,12 @@ def get_spec(fitsname,spi=True,spc=False,sp2=False,start=0,end=0,
     
     bw = dfreq*(end-start) # 
     freq = np.linspace(freq0-bw/2,freq0+bw/2,end-start)
-
+    import pylab as plt
     for x,y in np.array(ind).T:
         imdata[-2:] = x,y
         spec_line = data[imdata] # get spectral line
-        #spec_line = spec_line/max(spec_line) # Normalize
+#        spec_line = spec_line/max(spec_line) # Normalize
+#        plt.plot(freq,spec_line,'kx')
 
         if spc: 
             func = lambda freq,freq0,a,b: (freq/freq0)**(a + np.log(freq/freq0)*b)
@@ -93,6 +94,8 @@ def get_spec(fitsname,spi=True,spc=False,sp2=False,start=0,end=0,
             spc_map[0,x,y] = parms[0][2]
             spc_map[1,x,y] = err[2]
         
+#        plt.plot(freq,func(freq,*parms[0]),'r-')
+#        plt.show()
 #        print '\n%.4g +/- %.4g, %.2e +/- %.2e, %.2f +/- %.2e'%(parms[0][0],err[0],
 #                                                           parms[0][1],err[1],
 #                                                           parms[0][2],err[2]
@@ -123,4 +126,4 @@ def makefits(fitsname,data,hdr_info):
     
 
 if __name__=='__main__':
-    get_spec(sys.argv[1],start=0,spc=False)
+    get_spec(sys.argv[1],start=0,spc=False,sigma_level=10)

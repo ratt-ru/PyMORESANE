@@ -798,7 +798,11 @@ if __name__ == "__main__":
         # make MFS and spi and/or spc maps
         if args.mfs:
             import specfit 
-            specfit.get_spec(restored_image,spi=True,spc=args.spec_curv)
+            if args.mfs_chanrange:
+                start,end = map(int,args.mfs_chanrange.split(','))
+            else:
+                start,end = 0,len(model_images)-1
+            specfit.get_spec(restored_image,spi=True,spc=args.spec_curv,start=start,end=end,sigma_level=args.spi_sigmalevel)
 
     # single channel case
     elif dirty_nchan==1:

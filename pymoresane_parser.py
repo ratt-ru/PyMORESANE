@@ -1,5 +1,7 @@
 import argparse,types
 
+__version__ = '0.1'
+
 def handle_parser():
     """
     This function parses in values from command line, allowing for user control from the system terminal.
@@ -9,13 +11,19 @@ def handle_parser():
                                                  "the defaults will be used.",
                                                   formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
+    parser.add_argument("-v","--version", action='version',version='%s version %s'%(parser.prog,__version__))
+
     parser.add_argument("dirty", help="File name and location of the input dirty map .fits file.")
 
     parser.add_argument("psf", help="File name and location input psf .fits file.")
 
     parser.add_argument("-out","--outputname", help="File name and location of the output model and residual .fits files. Don't specify this if you specify model, residual and restored options. If neither this or model, residual or restored are not specified, the output name will be generated using the dirty map file path as a template.")
+
     parser.add_argument("--model-image",dest='model_image', help="File name and location of the output model .fits files.")
-    parser.add_argument("--residual-image",dest='residual_image', help="File name and location of the output residual .fits files.")
+
+    parser.add_argument("--residual-image",dest='residual_image', 
+                        help="File name and location of the output residual .fits files.")
+
     parser.add_argument("--restored-image",dest='restored_image', help="File name and location of the output restored .fits files.")
 
     parser.add_argument("-sr", "--singlerun", help="Specify whether pymoresane is to be run in scale-by-scale mode or "
@@ -90,9 +98,16 @@ def handle_parser():
                                                          , action="store_true")
 
     parser.add_argument("-eo", "--edgeoffset", help="Specify an additional offset along the edges. May reduce false "
+
                                                     , default=0, type=int)
     parser.add_argument("-mfs", "--mfs", help="Make MFS map. This comes with a spectral index map foo-spi.fits who's second"
                                                " plane is an error map for the spi fit",action='store_true')
+
+    parser.add_argument("-ssl", "--spi-sigmalevel",dest="spi_sigmalevel", help="Only fit spi for pixels above this sigma level",type=float,default=10)
+
+    parser.add_argument("-mc", "--mfs-chanrange",dest='mfs_chanrange', 
+                        help="Channel range for MFS image. Comma seperated interval: default is 0,nchan")
+
     parser.add_argument("-spc", "--spec-curv",dest='spec_curv', 
                         help="Fit for spectral curvature as well a spectral index",action='store_true')
 
