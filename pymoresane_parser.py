@@ -31,12 +31,14 @@ def handle_parser():
                                                    , action="store_true")
 
     parser.add_argument("-sbr", "--subregion", help="Specify pixel width of the central region of the dirty .fits "
-                                                   "which is to be deconvolved.", default=None)
+                                                   "which is to be deconvolved."
+                                                   "If not specified, inner half of dirty image wil be deconvolved",
+                                                    default=None,type=int)
 
     parser.add_argument("-sc", "--scalecount", help="Specify the maximum number of wavelet scales which the algorithm "
                                                     "is to consider. Only applies in single-run mode. For "
                                                     "scale-by-scale mode, use --startscale and --stopscale"
-                                                    , default=None)
+                                                    , default=None,type=int)
 
     parser.add_argument("-sts", "--startscale", help="Specify first scale to consider in the scale-by-scale case. "
                                                      "Should be 1 in almost all cases.", default=1, type=int)
@@ -115,9 +117,9 @@ def handle_parser():
                                                   , choices=["DEBUG","INFO", "WARNING", "ERROR","CRITICAL"])
 
     args = parser.parse_args()
-    for arg in 'scalecount subregion'.split():
-      val = getattr(args,arg)
-      if val: val = eval(val)
-      if isinstance(val,(types.NoneType,int)): setattr(args,arg,val)
-      else : raise TypeError('Option "%s" has to be either an int or None'%arg)
+#   for arg in 'scalecount subregion'.split():
+#     val = getattr(args,arg)
+#     if val: val = eval(val)
+#     if isinstance(val,(types.NoneType,int)): setattr(args,arg,val)
+#     else : raise TypeError('Option "%s" has to be either an int or None'%arg)
     return args
