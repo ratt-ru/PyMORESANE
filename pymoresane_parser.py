@@ -36,7 +36,7 @@ def handle_parser():
 
     parser.add_argument("-sl", "--sigmalevel", help="Specify the sigma level at which the thresholding of the wavelet "
                                                     "coefficients is to be performed. May be used to reduce false "
-                                                    "detections.", default=4, type=int)
+                                                    "detections.", default=4, type=float)
 
     parser.add_argument("-lg", "--loopgain", help="Specify the loop gain for the deconvolution step."
                                                   , default=0.2, type=float)
