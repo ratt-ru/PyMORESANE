@@ -585,8 +585,8 @@ class FitsImage:
         self.restored += self.residual
         self.restored = self.restored.astype(np.float32)
 
-        self.img_hdr.update('BMAJ',beam_params[0])
-        self.img_hdr.update('BMIN',beam_params[1])
+        self.img_hdr.update('BMAJ',beam_params[1])
+        self.img_hdr.update('BMIN',beam_params[0])
         self.img_hdr.update('BPA',beam_params[2])
 
     def handle_input(self, input_hdr):
