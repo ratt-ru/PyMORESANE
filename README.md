@@ -1,6 +1,7 @@
 # PyMORESANE
 
-This is a Python and pyCUDA-accelerated implementation of the MORESANE deconvolution algorithm (see [Dabbech et al. 2012](http://www.academia.edu/1942933/Astronomical_image_deconvolution_using_sparse_priors_An_analysis-by-synthesis_approach), Dabbech et al. in prep.)
+This is a Python and pyCUDA-accelerated implementation of the MORESANE deconvolution algorithm (see [Dabbech et al. 2014](http://arxiv.org/abs/1412.5387), and 
+see [Dabbech et al. 2012](http://www.academia.edu/1942933/Astronomical_image_deconvolution_using_sparse_priors_An_analysis-by-synthesis_approach)).
 
 ### BASIC INSTALLATION
 
