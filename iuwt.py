@@ -616,7 +616,7 @@ def gpu_a_trous():
                             else
                                 { in2[tid2] += wfil[4]*in1[tid2 + lstp*len]; }
                         }
-                        """)
+                        """, keep=True)
 
     ker2 = SourceModule("""
                         __global__ void gpu_a_trous_col_kernel(float *in1, float *in2, float *wfil, int *scale)
@@ -653,6 +653,6 @@ def gpu_a_trous():
                                 { in2[tid2] += wfil[4]*in1[tid2 + lstp]; }
 
                         }
-                       """)
+                       """, keep=True)
 
     return ker1.get_function("gpu_a_trous_row_kernel"), ker2.get_function("gpu_a_trous_col_kernel")

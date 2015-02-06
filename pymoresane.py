@@ -207,12 +207,19 @@ class FitsImage:
         # returns the decomposition of the PSF. The norm of each scale is found - these correspond to the energies or
         # weighting factors which must be applied when locating maxima.
 
+        ### REPLACE SCALECOUNT WITH: int(np.log2(self.dirty_data_shape[0])-1)
+
         psf_decomposition = iuwt.iuwt_decomposition(psf_subregion, scale_count, mode=decom_mode, core_count=core_count)
 
         psf_energies = np.empty([psf_decomposition.shape[0],1,1], dtype=np.float32)
 
         for i in range(psf_energies.shape[0]):
             psf_energies[i] = np.sqrt(np.sum(np.square(psf_decomposition[i,:,:])))
+
+        # INCORPORATE IF NECESSARY. POSSIBLY AT OUTER LEVEL
+
+        # psf_decomposition = psf_decomposition/psf_energies
+        # print(np.unravel_index(np.argmax(psf_decomposition), psf_decomposition.shape)[0])
 
 ######################################################MAJOR LOOP######################################################
 

@@ -139,7 +139,7 @@ def gpu_source_extraction(in1, tolerance, store_on_gpu):
                             if (in1[tid2] == in2[0])
                                 { in1[tid2] = -1; }
                         }
-                       """)
+                       """, keep=True)
 
     ker2 = SourceModule("""
                         __global__ void gpu_mask_kernel2(int *in1)
@@ -154,7 +154,7 @@ def gpu_source_extraction(in1, tolerance, store_on_gpu):
                             else
                                 { in1[tid2] = 1; }
                         }
-                       """)
+                       """, keep=True)
 
     ker3 = SourceModule("""
                         __global__ void gpu_store_objects(int *in1, float *out1, int *scale)
@@ -169,7 +169,7 @@ def gpu_source_extraction(in1, tolerance, store_on_gpu):
                             if (blockIdx.z==scale[0])
                                 { out1[tid3] = in1[tid2]; }
                         }
-                       """)
+                       """, keep=True)
 
     # The following initialises some variables for storing the labelled image and the number of labels. The per scale
     # maxima are also initialised here.
