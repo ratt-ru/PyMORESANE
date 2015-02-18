@@ -1,15 +1,17 @@
 import logging
 import pyfits
 import numpy as np
-import iuwt
-import iuwt_convolution as conv
-import iuwt_toolbox as tools
-import pymoresane_parser as pparser
-import beam_fit
+import pymoresane.iuwt as iuwt
+import pymoresane.iuwt_convolution as conv
+import pymoresane.iuwt_toolbox as tools
+import pymoresane.parser as pparser
+from pymoresane.beam_fit import beam_fit
 import time
 
+
 class FitsImage:
-    """A class for the manipulation of .fits images - in particular for implementing deconvolution."""
+    """A class for the manipulation of .fits images - in particular for
+    implementing deconvolution."""
 
     def __init__(self, image_name, psf_name):
         """
@@ -116,7 +118,7 @@ class FitsImage:
 
         if np.all(np.array(self.psf_data_shape)==2*np.array(self.dirty_data_shape)):
             psf_subregion = self.psf_data[self.psf_data_shape[0]/2-subregion/2:self.psf_data_shape[0]/2+subregion/2,
-                                          self.psf_data_shape[1]/2-subregion/2:self.psf_data_shape[1]/2+subregion/2]
+                            self.psf_data_shape[1]/2-subregion/2:self.psf_data_shape[1]/2+subregion/2]
         else:
             psf_subregion = self.psf_data[subregion_slice]
 
@@ -216,12 +218,12 @@ class FitsImage:
         for i in range(psf_energies.shape[0]):
             psf_energies[i] = np.sqrt(np.sum(np.square(psf_decomposition[i,:,:])))
 
-        # INCORPORATE IF NECESSARY. POSSIBLY AT OUTER LEVEL
+            # INCORPORATE IF NECESSARY. POSSIBLY AT OUTER LEVEL
 
-        # psf_decomposition = psf_decomposition/psf_energies
-        # print(np.unravel_index(np.argmax(psf_decomposition), psf_decomposition.shape)[0])
+            # psf_decomposition = psf_decomposition/psf_energies
+            # print(np.unravel_index(np.argmax(psf_decomposition), psf_decomposition.shape)[0])
 
-######################################################MAJOR LOOP######################################################
+        ######################################################MAJOR LOOP######################################################
 
         major_loop_niter = 0
         max_coeff = 1
@@ -233,7 +235,7 @@ class FitsImage:
         std_ratio = 1
 
         min_scale = 0   # The current minimum scale of interest. If this ever equals or exceeds the scale_count
-                        # value, it will also break the following loop.
+        # value, it will also break the following loop.
 
         # In the case that edge_supression is desired, the following sets up a masking array.
 
@@ -331,7 +333,7 @@ class FitsImage:
 
                 recomposed_sources = iuwt.iuwt_recomposition(extracted_sources, scale_adjust, decom_mode, core_count)
 
-######################################################MINOR LOOP######################################################
+                ######################################################MINOR LOOP######################################################
 
                 x = np.zeros_like(recomposed_sources)
                 r = recomposed_sources.copy()
@@ -415,8 +417,8 @@ class FitsImage:
 
                     if (minor_loop_niter>2)&(snr_current<=snr_last):
                         if (snr_current>10.5):
-                            logger.info("SNR has decreased - Model has reached ~{}% error - exiting minor loop."\
-                                    .format(int(100/np.power(10,snr_current/20))))
+                            logger.info("SNR has decreased - Model has reached ~{}% error - exiting minor loop." \
+                                        .format(int(100/np.power(10,snr_current/20))))
                             min_scale = 0
                             break
                         else:
@@ -430,15 +432,15 @@ class FitsImage:
                 logger.info("{} minor loop iterations performed.".format(minor_loop_niter))
 
                 if ((minor_loop_niter==minor_loop_miter)&(snr_current>10.5)):
-                    logger.info("Maximum number of minor loop iterations exceeded. Model reached ~{}% error."\
-                                    .format(int(100/np.power(10,snr_current/20))))
+                    logger.info("Maximum number of minor loop iterations exceeded. Model reached ~{}% error." \
+                                .format(int(100/np.power(10,snr_current/20))))
                     min_scale = 0
                     break
 
                 if (min_scale==0):
                     break
 
-###################################################END OF MINOR LOOP###################################################
+                ###################################################END OF MINOR LOOP###################################################
 
             if min_scale==scale_count:
                 logger.info("All scales are performing poorly - stopping.")
@@ -568,12 +570,12 @@ class FitsImage:
         """
         This method constructs the restoring beam and then adds the convolution to the residual.
         """
-        clean_beam, beam_params = beam_fit.beam_fit(self.psf_data, self.psf_hdu_list[0].header)
+        clean_beam, beam_params = beam_fit(self.psf_data, self.psf_hdu_list[0].header)
 
         if np.all(np.array(self.psf_data_shape)==2*np.array(self.dirty_data_shape)):
             self.restored = np.fft.fftshift(np.fft.irfft2(np.fft.rfft2(conv.pad_array(self.model))*np.fft.rfft2(clean_beam)))
             self.restored = self.restored[self.dirty_data_shape[0]/2:-self.dirty_data_shape[0]/2,
-                                          self.dirty_data_shape[1]/2:-self.dirty_data_shape[1]/2]
+                            self.dirty_data_shape[1]/2:-self.dirty_data_shape[1]/2]
         else:
             self.restored = np.fft.fftshift(np.fft.irfft2(np.fft.rfft2(self.model)*np.fft.rfft2(clean_beam)))
         self.restored += self.residual
@@ -595,9 +597,9 @@ class FitsImage:
 
         for i in range(input_hdr['NAXIS']):
             if input_hdr['CTYPE%d'%(i+1)].startswith("RA"):
-                    input_slice[-1] = slice(None)
+                input_slice[-1] = slice(None)
             if input_hdr['CTYPE%d'%(i+1)].startswith("DEC"):
-                    input_slice[-2] = slice(None)
+                input_slice[-2] = slice(None)
 
         return input_slice
 
@@ -643,7 +645,8 @@ class FitsImage:
 
         return logger
 
-if __name__ == "__main__":
+
+def main():
     args = pparser.handle_parser()
 
     data = FitsImage(args.dirty, args.psf)
@@ -681,13 +684,3 @@ if __name__ == "__main__":
     #                 all_on_gpu=True, edge_suppression=True)
     # test.moresane_by_scale(subregion=512, major_loop_miter=100, minor_loop_miter=30, tolerance=0.7,
     #                 conv_mode="circular", accuracy=1e-6, loop_gain=0.2, enforce_positivity=True, sigma_level=4)
-
-
-
-
-
-
-
-
-
-

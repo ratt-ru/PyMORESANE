@@ -8,8 +8,9 @@ try:
     import pycuda.autoinit
     import pycuda.gpuarray as gpuarray
     from pycuda.compiler import SourceModule
-except:
+except ImportError:
     print "Pycuda unavailable - GPU mode will fail."
+
 
 def iuwt_decomposition(in1, scale_count, scale_adjust=0, mode='ser', core_count=2, store_smoothed=False,
                        store_on_gpu=False):
