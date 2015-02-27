@@ -334,12 +334,13 @@ class FitsImage:
 
                 snr_last = 0
                 snr_current = 0
+                model_error = 1
 
                 # The following is the minor loop of the algorithm. In particular, we make use of the conjugate
                 # gradient descent method to optimise our model. The variables have been named in order to appear
                 # consistent with the algorithm.
 
-                while (minor_loop_niter<minor_loop_miter):
+                while ((minor_loop_niter<minor_loop_miter)&(model_error>0.01)):
 
                     Ap = conv.fft_convolve(p, psf_subregion_fft, conv_device, conv_mode, store_on_gpu=all_on_gpu)
                     Ap = iuwt.iuwt_decomposition(Ap, max_scale, scale_adjust, decom_mode, core_count,
@@ -350,6 +351,11 @@ class FitsImage:
                     alpha_denominator = np.dot(p.reshape(1,-1),Ap.reshape(-1,1))[0,0]
                     alpha_numerator = np.dot(r.reshape(1,-1),r.reshape(-1,1))[0,0]
                     alpha = alpha_numerator/alpha_denominator
+
+                    alpha, predicted_snr = tools.line_search(x, p, alpha, extracted_sources, extracted_sources_mask,
+                                                psf_subregion_fft, max_scale, scale_adjust, enforce_positivity,
+                                                conv_device, conv_mode, all_on_gpu, decom_mode, core_count,
+                                                miter=100, merror=0.001)
 
                     xn = x + alpha*p
 
@@ -387,6 +393,13 @@ class FitsImage:
                     snr_last = snr_current
                     snr_current = tools.snr_ratio(extracted_sources, model_sources)
 
+                    model_error = np.linalg.norm(x[:]-xn[:])/np.linalg.norm(x[:])
+                    print model_error
+
+                    if ((minor_loop_niter>1)&(predicted_snr<0)):
+                        print "SNR < 0"
+                        break
+
                     minor_loop_niter += 1
 
                     logger.debug("SNR at iteration {0} = {1}".format(minor_loop_niter, snr_current))
@@ -394,28 +407,29 @@ class FitsImage:
                     # The following flow control determines whether or not the model is adequate and if a
                     # recalculation is required.
 
-                    if (minor_loop_niter==1)&(snr_current>40):
-                        logger.info("SNR too large on first iteration - false detection. "
-                                    "Incrementing the minimum scale.")
-                        min_scale += 1
-                        break
 
-                    if snr_current>40:
-                        logger.info("Model has reached <1% error - exiting minor loop.")
-                        x = xn
-                        min_scale = 0
-                        break
-
-                    if (minor_loop_niter>2)&(snr_current<=snr_last):
-                        if (snr_current>10.5):
-                            logger.info("SNR has decreased - Model has reached ~{}% error - exiting minor loop."\
-                                    .format(int(100/np.power(10,snr_current/20))))
-                            min_scale = 0
-                            break
-                        else:
-                            logger.info("SNR has decreased - SNR too small. Incrementing the minimum scale.")
-                            min_scale += 1
-                            break
+                    # if (minor_loop_niter==1)&(snr_current>40):
+                    #     logger.info("SNR too large on first iteration - false detection. "
+                    #                 "Incrementing the minimum scale.")
+                    #     min_scale += 1
+                    #     break
+                    #
+                    # if snr_current>40:
+                    #     logger.info("Model has reached <1% error - exiting minor loop.")
+                    #     x = xn
+                    #     min_scale = 0
+                    #     break
+                    #
+                    # if (minor_loop_niter>2)&(snr_current<=snr_last):
+                    #     if (snr_current>10.5):
+                    #         logger.info("SNR has decreased - Model has reached ~{}% error - exiting minor loop."\
+                    #                 .format(int(100/np.power(10,snr_current/20))))
+                    #         min_scale = 0
+                    #         break
+                    #     else:
+                    #         logger.info("SNR has decreased - SNR too small. Incrementing the minimum scale.")
+                    #         min_scale += 1
+                    #         break
 
                     r = rn
                     x = xn

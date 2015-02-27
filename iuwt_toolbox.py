@@ -1,5 +1,7 @@
 import numpy as np
 from scipy import ndimage
+import iuwt
+import iuwt_convolution as conv
 
 try:
     import pycuda.driver as drv
@@ -9,6 +11,8 @@ try:
     from pycuda.compiler import SourceModule
 except:
     print "Pycuda unavailable - GPU mode will fail."
+
+import pylab as pb
 
 def threshold(in1, sigma_level=4):
     """
@@ -88,6 +92,14 @@ def cpu_source_extraction(in1, tolerance):
     for i in range(in1.shape[0]):
         scale_maxima[i] = np.max(in1[i,:,:])
         objects[i,:,:], object_count[i] = ndimage.label(in1[i,:,:], structure=[[1,1,1],[1,1,1],[1,1,1]])
+
+    # TODO: The following should prevent false detections by removing small objects at the maximum scale.
+
+    for i in range(1,object_count[-1]):
+        if np.sum(objects[-1,:,:]==i)<5:
+            objects[-1,:,:] = np.where(objects[-1,:,:]==i,0,objects[-1,:,:])
+            # pb.imshow(objects[-1,:,:])
+            # pb.show()
 
     # The following removes the insignificant objects and then extracts the remaining ones.
 
@@ -249,3 +261,75 @@ def snr_ratio(in1, in2):
     out1 = 20*(np.log10(np.linalg.norm(in1)/np.linalg.norm(in1-in2)))
 
     return out1
+
+def line_search(x, p, alpha, extracted_sources, extracted_sources_mask, psf_subregion_fft,
+                max_scale, scale_adjust, enforce_positivity, conv_device, conv_mode, all_on_gpu, decom_mode,
+                core_count, miter=100, merror=0.001):
+
+    golden_ratio = ((np.sqrt(5)-1)/2)
+
+    print alpha
+
+    a = -3*abs(alpha)
+    b =  3*abs(alpha)
+
+    c = b + golden_ratio*(a - b)
+    d = a + golden_ratio*(b - a)
+
+    fc = predict_result(x, p, c, extracted_sources, extracted_sources_mask, psf_subregion_fft,
+                max_scale, scale_adjust, enforce_positivity, conv_device, conv_mode, all_on_gpu, decom_mode,
+                core_count)
+    fd = predict_result(x, p, d, extracted_sources, extracted_sources_mask, psf_subregion_fft,
+                max_scale, scale_adjust, enforce_positivity, conv_device, conv_mode, all_on_gpu, decom_mode,
+                core_count)
+
+    niter = 0
+
+    while (((abs(b - a))>merror*(abs(c) + abs(d))) & (niter<miter)):
+
+        niter += 1
+
+        if (fc > fd):
+            b = d
+            # fb = fd
+            d = c
+            fd = fc
+            c = b + golden_ratio*(a - b)
+            fc = predict_result(x, p, c, extracted_sources, extracted_sources_mask, psf_subregion_fft,
+                max_scale, scale_adjust, enforce_positivity, conv_device, conv_mode, all_on_gpu, decom_mode,
+                core_count)
+            alpha = c
+            predicted_snr = fc
+        else:
+            a = c
+            # fa = fc
+            c = d
+            fc = fd
+            d = a + golden_ratio*(b - a)
+            fd = predict_result(x, p, d, extracted_sources, extracted_sources_mask, psf_subregion_fft,
+                max_scale, scale_adjust, enforce_positivity, conv_device, conv_mode, all_on_gpu, decom_mode,
+                core_count)
+            alpha = d
+            predicted_snr = fd
+
+        print alpha, predicted_snr
+
+    return alpha, predicted_snr
+
+def predict_result(x, p, alpha, extracted_sources, extracted_sources_mask, psf_subregion_fft,
+                max_scale, scale_adjust, enforce_positivity, conv_device, conv_mode, all_on_gpu, decom_mode,
+                core_count):
+
+    xn = x + alpha*p
+
+    if enforce_positivity:
+       xn[xn<0] = 0
+
+    prediction = conv.fft_convolve(xn, psf_subregion_fft, conv_device, conv_mode, store_on_gpu=all_on_gpu)
+    prediction = iuwt.iuwt_decomposition(prediction, max_scale, scale_adjust, decom_mode, core_count,
+                                 store_on_gpu=all_on_gpu)
+    prediction = extracted_sources_mask*prediction
+
+    predicted_snr = snr_ratio(extracted_sources, prediction)
+
+    return predicted_snr
