@@ -126,7 +126,8 @@ def gpu_c2r_ifft(in1, is_gpuarray=False, store_on_gpu=False):
 
     gpu_out1 = gpuarray.empty([output_size[0],output_size[1]], np.float32)
     gpu_plan = Plan(output_size, np.complex64, np.float32)
-    ifft(gpu_in1, gpu_out1, gpu_plan, True)
+    ifft(gpu_in1, gpu_out1, gpu_plan)
+    scale_fft(gpu_out1)
 
     if store_on_gpu:
         return gpu_out1
@@ -186,7 +187,7 @@ def fft_shift(in1):
                                 }
 
                         }
-                       """)
+                       """, keep=True)
 
     fft_shift_ker = ker.get_function("fft_shift_ker")
     fft_shift_ker(in1, block=(32,32,1), grid=(int(in1.shape[1]//32), int(in1.shape[0]//32)))
@@ -221,7 +222,7 @@ def contiguous_slice(in1):
                                 { out1[out_idx] = in1[tid2]; }
 
                         }
-                       """)
+                       """, keep=True)
 
     gpu_out1 = gpuarray.empty([in1.shape[0]/2,in1.shape[1]/2], np.float32)
 
@@ -229,3 +230,28 @@ def contiguous_slice(in1):
     contiguous_slice_ker(in1, gpu_out1, block=(32,32,1), grid=(int(in1.shape[1]//32), int(in1.shape[0]//32)))
 
     return gpu_out1
+
+def scale_fft(in1):
+    """
+    This function performs in-place scaling after the IFFT without recompilation.
+
+    INPUTS:
+    in1     (no default):   Array containing data which is to be scaled.
+
+    """
+
+    ker = SourceModule("""
+                        __global__ void scale_fft_ker(float *in1)
+                        {
+                            const int len = gridDim.x*blockDim.x;
+                            const int col = (blockDim.x * blockIdx.x + threadIdx.x);
+                            const int row = (blockDim.y * blockIdx.y + threadIdx.y);
+                            const int tid2 = col + len*row;
+                            const int szin1 = gridDim.x*blockDim.x*gridDim.y*blockDim.y;
+
+							in1[tid2] = in1[tid2]/szin1;                           
+                        }
+                       """, keep=True)
+
+    scale_fft_ker = ker.get_function("scale_fft_ker")
+    scale_fft_ker(in1, block=(32,32,1), grid=(int(in1.shape[1]//32), int(in1.shape[0]//32)))
