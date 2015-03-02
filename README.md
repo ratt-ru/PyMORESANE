@@ -1,6 +1,10 @@
 # PyMORESANE
 
-This is a Python and pyCUDA-accelerated implementation of the MORESANE deconvolution algorithm (see [Dabbech et al. 2014](http://arxiv.org/abs/1412.5387) for a full description of the algorithm, and [Dabbech et al. 2012](http://www.academia.edu/1942933/Astronomical_image_deconvolution_using_sparse_priors_An_analysis-by-synthesis_approach) for earlier work).
+This is a Python and pyCUDA-accelerated implementation of the MORESANE
+deconvolution algorithm (see [Dabbech et al. 2014](http://arxiv.org/abs/1412.5387)
+for a full description of the algorithm, and
+[Dabbech et al. 2012](http://www.academia.edu/1942933/Astronomical_image_deconvolution_using_sparse_priors_An_analysis-by-synthesis_approach)
+for earlier work).
 
 ## BASIC INSTALLATION
 
@@ -10,6 +14,7 @@ Requirements:
   * [pyfits](http://www.stsci.edu/institute/software_hardware/pyfits/Download)
   * [CUDA](https://developer.nvidia.com/cuda-downloads)
   * [pycuda](http://mathema.tician.de/software/pycuda/)
+  * scikits.cuda](http://scikit-cuda.readthedocs.org/)
 
 You can use pip to install these:
 

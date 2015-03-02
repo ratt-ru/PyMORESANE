@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 
-import os
 from distutils.core import setup
+from pymoresane import __version__
 
 setup(name='pymoresane',
-      version='0.1',
+      version=__version__,
       description='CUDA-accelerated implementation of the MORESANE deconvolution algorithm',
       author='JSKenyon',
       author_email='jonosken@gmail.com',

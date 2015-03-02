@@ -9,6 +9,9 @@ from pymoresane.beam_fit import beam_fit
 import time
 
 
+logger = logging.getLogger(__name__)
+
+
 class FitsImage:
     """A class for the manipulation of .fits images - in particular for
     implementing deconvolution."""

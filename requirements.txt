@@ -2,4 +2,5 @@ numpy
 scipy
 pyfits
 pycuda
+scikits.cuda
 
