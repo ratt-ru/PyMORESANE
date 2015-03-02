@@ -1,5 +1,6 @@
 import argparse
 
+
 def handle_parser():
     """
     This function parses in values from command line, allowing for user control from the system terminal.

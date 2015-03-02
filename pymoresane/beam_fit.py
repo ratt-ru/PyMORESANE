@@ -1,7 +1,7 @@
 import numpy as np
 from scipy import ndimage
 from scipy.optimize import curve_fit
-import pylab as pb
+
 
 def beam_fit(psf, psf_header):
     """

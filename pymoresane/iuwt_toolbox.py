@@ -226,7 +226,7 @@ def gpu_source_extraction(in1, tolerance, store_on_gpu):
 
         if store_on_gpu:
             gpu_store_objects(gpu_objects_page, gpu_objects, gpu_idx, block=(32,32,1), grid=(objects.shape[2]//32,
-                                objects.shape[1]//32, objects.shape[0]))
+                                                                                             objects.shape[1]//32, objects.shape[0]))
             gpu_idx -= 1
 
     if store_on_gpu:

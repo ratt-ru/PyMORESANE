@@ -12,6 +12,7 @@ try:
 except:
     print "Pycuda unavailable - GPU mode will fail."
 
+
 def fft_convolve(in1, in2, conv_device="cpu", conv_mode="linear", store_on_gpu=False):
     """
     This function determines the convolution of two inputs using the FFT. Contains an implementation for both CPU
@@ -68,6 +69,7 @@ def fft_convolve(in1, in2, conv_device="cpu", conv_mode="linear", store_on_gpu=F
 
         elif conv_mode=="circular":
             return np.fft.fftshift(np.fft.irfft2(in2*np.fft.rfft2(in1)))
+
 
 def gpu_r2c_fft(in1, is_gpuarray=False, store_on_gpu=False):
     """
@@ -134,6 +136,7 @@ def gpu_c2r_ifft(in1, is_gpuarray=False, store_on_gpu=False):
     else:
         return gpu_out1.get()
 
+
 def pad_array(in1):
     """
     Simple convenience function to pad arrays for linear convolution.
@@ -151,6 +154,7 @@ def pad_array(in1):
     out1[padded_size[0]/4:3*padded_size[0]/4,padded_size[1]/4:3*padded_size[1]/4] = in1
 
     return out1
+
 
 def fft_shift(in1):
     """
@@ -194,6 +198,7 @@ def fft_shift(in1):
 
     return in1
 
+
 def contiguous_slice(in1):
     """
     This function unpads an array on the GPU in such a way as to make it contiguous.
@@ -230,6 +235,7 @@ def contiguous_slice(in1):
     contiguous_slice_ker(in1, gpu_out1, block=(32,32,1), grid=(int(in1.shape[1]//32), int(in1.shape[0]//32)))
 
     return gpu_out1
+
 
 def scale_fft(in1):
     """
