@@ -361,8 +361,7 @@ class FitsImage:
 
                     alpha, predicted_snr = tools.line_search(x, p, alpha, extracted_sources, extracted_sources_mask,
                                                 psf_subregion_fft, max_scale, scale_adjust, enforce_positivity,
-                                                conv_device, conv_mode, all_on_gpu, decom_mode, core_count,
-                                                miter=100, merror=0.001)
+                                                conv_device, conv_mode, all_on_gpu, decom_mode, core_count)
 
                     xn = x + alpha*p
 

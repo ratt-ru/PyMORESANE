@@ -98,8 +98,6 @@ def cpu_source_extraction(in1, tolerance):
     for i in range(1,object_count[-1]):
         if np.sum(objects[-1,:,:]==i)<5:
             objects[-1,:,:] = np.where(objects[-1,:,:]==i,0,objects[-1,:,:])
-            # pb.imshow(objects[-1,:,:])
-            # pb.show()
 
     # The following removes the insignificant objects and then extracts the remaining ones.
 
@@ -264,11 +262,22 @@ def snr_ratio(in1, in2):
 
 def line_search(x, p, alpha, extracted_sources, extracted_sources_mask, psf_subregion_fft,
                 max_scale, scale_adjust, enforce_positivity, conv_device, conv_mode, all_on_gpu, decom_mode,
-                core_count, miter=100, merror=0.001):
+                core_count, miter=100, merror=0.01):
+    """
+    The following is a an implementation of the golden section search for the step-size parameter alpha. This
+    improves the convergence of the algorithm substantially, though comes with a hefty computational cost.
+
+    INPUTS:
+    SEE RELEVANT ENTRIES IN MAIN BODY OF pymoresane.py
+    miter       (default=100):      Maximum number of iterations per search.
+    merror      (default=0.01):     Determines how close the points must be clustered for solution to be accepted.
+
+    OUTPUTS:
+    alpha                           Optimum step length.
+    predicted_snr                   SNR obtained for optimum alpha.
+    """
 
     golden_ratio = ((np.sqrt(5)-1)/2)
-
-    print alpha
 
     a = -3*abs(alpha)
     b =  3*abs(alpha)
@@ -284,8 +293,10 @@ def line_search(x, p, alpha, extracted_sources, extracted_sources_mask, psf_subr
                 core_count)
 
     niter = 0
+    predicted_snr = 1
+    prev_snr = 0
 
-    while (((abs(b - a))>merror*(abs(c) + abs(d))) & (niter<miter)):
+    while (((abs(b - a))>merror*(abs(c) + abs(d))) & (niter<miter) & (abs(predicted_snr-prev_snr)>0.01)):
 
         niter += 1
 
@@ -299,6 +310,7 @@ def line_search(x, p, alpha, extracted_sources, extracted_sources_mask, psf_subr
                 max_scale, scale_adjust, enforce_positivity, conv_device, conv_mode, all_on_gpu, decom_mode,
                 core_count)
             alpha = c
+            prev_snr = predicted_snr
             predicted_snr = fc
         else:
             a = c
@@ -310,6 +322,7 @@ def line_search(x, p, alpha, extracted_sources, extracted_sources_mask, psf_subr
                 max_scale, scale_adjust, enforce_positivity, conv_device, conv_mode, all_on_gpu, decom_mode,
                 core_count)
             alpha = d
+            prev_snr = predicted_snr
             predicted_snr = fd
 
         print alpha, predicted_snr
@@ -319,6 +332,16 @@ def line_search(x, p, alpha, extracted_sources, extracted_sources_mask, psf_subr
 def predict_result(x, p, alpha, extracted_sources, extracted_sources_mask, psf_subregion_fft,
                 max_scale, scale_adjust, enforce_positivity, conv_device, conv_mode, all_on_gpu, decom_mode,
                 core_count):
+    """
+    The following is a an implementation of the golden section search for the step-size parameter alpha. This
+    improves the convergence of the algorithm substantially, though comes with a hefty computational cost.
+
+    INPUTS:
+    SEE RELEVANT ENTRIES IN MAIN BODY OF pymoresane.py
+
+    OUTPUTS:
+    predicted_snr                   SNR obtained for current alpha.
+    """
 
     xn = x + alpha*p
 
