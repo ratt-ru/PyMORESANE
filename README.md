@@ -14,7 +14,7 @@ Requirements:
   * [pyfits](http://www.stsci.edu/institute/software_hardware/pyfits/Download)
   * [CUDA](https://developer.nvidia.com/cuda-downloads)
   * [pycuda](http://mathema.tician.de/software/pycuda/)
-  * scikits.cuda](http://scikit-cuda.readthedocs.org/)
+  * [scikits.cuda](http://scikit-cuda.readthedocs.org/)
 
 You can use pip to install these:
 
