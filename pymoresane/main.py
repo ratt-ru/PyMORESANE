@@ -630,7 +630,7 @@ class FitsImage:
         """
         level = getattr(logging, level.upper())
 
-        logger = logging.getLogger('main')
+        logger = logging.getLogger(__name__)
         logger.setLevel(logging.DEBUG)
 
         fh = logging.FileHandler('PyMORESANE.log', mode='w')
