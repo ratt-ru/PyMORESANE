@@ -98,6 +98,10 @@ class FitsImage:
 
         logger.info("Starting...")
 
+        if (self.dirty_data_shape[0]%2)==1:
+            logger.error("Image size is uneven. Please use even dimensions.")
+            raise ValueError("Image size is uneven. Please use even dimensions.")
+
         if (subregion is None)|(subregion>self.dirty_data_shape[0]):
             subregion = self.dirty_data_shape[0]
             logger.info("Assuming subregion is {}px.".format(self.dirty_data_shape[0]))
@@ -251,6 +255,9 @@ class FitsImage:
                     suppression_array[i,edge_offset:-edge_offset, edge_offset:-edge_offset] = 1
                 else:
                     suppression_array[i,edge_corruption:-edge_corruption, edge_corruption:-edge_corruption] = 1
+        elif edge_offset>0:
+            suppression_array = np.zeros([scale_count,subregion,subregion],np.float32)
+            suppression_array[:,edge_offset:-edge_offset, edge_offset:-edge_offset] = 1
 
         # The following is the major loop. Its exit conditions are reached if if the number of major loop iterations
         # exceeds a user defined value, the maximum wavelet coefficient is zero or the standard deviation of the
@@ -273,7 +280,7 @@ class FitsImage:
 
                     # If edge_supression is desired, the following simply masks out the offending wavelet coefficients.
 
-                    if edge_suppression:
+                    if edge_suppression|(edge_offset>0):
                         dirty_decomposition_thresh *= suppression_array
 
                     # The following calculates and stores the normalised maximum at each scale.
