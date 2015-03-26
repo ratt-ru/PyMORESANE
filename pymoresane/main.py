@@ -63,7 +63,7 @@ class FitsImage:
     def moresane(self, subregion=None, scale_count=None, sigma_level=4, loop_gain=0.1, tolerance=0.75, accuracy=1e-6,
                  major_loop_miter=100, minor_loop_miter=30, all_on_gpu=False, decom_mode="ser", core_count=1,
                  conv_device='cpu', conv_mode='linear', extraction_mode='cpu', enforce_positivity=False,
-                 edge_suppression=False, edge_offset=0):
+                 edge_suppression=False, edge_offset=0, flux_threshold=0):
         """
         Primary method for wavelet analysis and subsequent deconvolution.
 
@@ -84,7 +84,7 @@ class FitsImage:
                                                 exit condition when the SNR is does not reach a maximum.
         all_on_gpu          (default=False):    Boolean specifier to toggle all gpu modes on.
         decom_mode          (default='ser'):    Specifier for decomposition mode - serial, multiprocessing, or gpu.
-        core_count          (default=1):        For multiprocessing, specifies clean_mask = self.mask[subregion_slice]the number of cores.
+        core_count          (default=1):        For multiprocessing, specifies the number of cores.
         conv_device         (default='cpu'):    Specifier for device to be used - cpu or gpu.
         conv_mode           (default='linear'): Specifier for convolution mode - linear or circular.
         extraction_mode     (default='cpu'):    Specifier for mode to be used - cpu or gpu.
@@ -92,6 +92,8 @@ class FitsImage:
         edge_suppression    (default=False):    Boolean specifier for whether or not the edges are to be suprressed.
         edge_offset         (default=0):        Numeric value for an additional user-specified number of edge pixels
                                                 to be ignored. This is added to the minimum suppression.
+        flux_threshold      (default=0):        Float value, assumed to be in Jy, which specifies an approximate
+                                                convolution depth.
 
         OUTPUTS:
         self.model          (no default):       Model extracted by the algorithm.
@@ -273,7 +275,8 @@ class FitsImage:
         # exceeds a user defined value, the maximum wavelet coefficient is zero or the standard deviation of the
         # residual drops below a user specified accuracy threshold.
 
-        while (((major_loop_niter<major_loop_miter) & (max_coeff>0)) & (std_ratio>accuracy)):
+        while (((major_loop_niter<major_loop_miter) & (max_coeff>0)) & ((std_ratio>accuracy)
+                   & (np.max(dirty_subregion)>flux_threshold))):
 
             # The first interior loop allows for the model to be re-estimated at a higher scale in the case of a poor
             # SNR. If, however, a better job cannot be done, the loop will terminate.
@@ -517,7 +520,7 @@ class FitsImage:
     def moresane_by_scale(self, start_scale=1, stop_scale=20, subregion=None, sigma_level=4, loop_gain=0.1,
                           tolerance=0.75, accuracy=1e-6, major_loop_miter=100, minor_loop_miter=30, all_on_gpu=False,
                           decom_mode="ser", core_count=1, conv_device='cpu', conv_mode='linear', extraction_mode='cpu',
-                          enforce_positivity=False, edge_suppression=False, edge_offset=0):
+                          enforce_positivity=False, edge_suppression=False, edge_offset=0, flux_threshold=0):
         """
         Extension of the MORESANE algorithm. This takes a scale-by-scale approach, attempting to remove all sources
         at the lower scales before moving onto the higher ones. At each step the algorithm may return to previous
@@ -556,6 +559,8 @@ class FitsImage:
 
         # The following preserves the dirty image as it will be changed on every iteration.
 
+        print(flux_threshold)
+
         dirty_data = self.dirty_data
 
         scale_count = start_scale
@@ -570,7 +575,7 @@ class FitsImage:
                           minor_loop_miter=minor_loop_miter, all_on_gpu=all_on_gpu, decom_mode=decom_mode,
                           core_count=core_count, conv_device=conv_device, conv_mode=conv_mode,
                           extraction_mode=extraction_mode, enforce_positivity=enforce_positivity,
-                          edge_suppression=edge_suppression, edge_offset=edge_offset)
+                          edge_suppression=edge_suppression, edge_offset=edge_offset, flux_threshold=flux_threshold)
 
             self.dirty_data = self.residual
 
@@ -672,8 +677,6 @@ class FitsImage:
 def main():
     args = pparser.handle_parser()
 
-    print args.mask
-
     data = FitsImage(args.dirty, args.psf, args.mask)
 
     logger = data.make_logger(args.loglevel)
@@ -685,12 +688,12 @@ def main():
         data.moresane(args.subregion, args.scalecount, args.sigmalevel, args.loopgain, args.tolerance, args.accuracy,
                       args.majorloopmiter, args.minorloopmiter, args.allongpu, args.decommode, args.corecount,
                       args.convdevice, args.convmode, args.extractionmode, args.enforcepositivity,
-                      args.edgesuppression, args.edgeoffset)
+                      args.edgesuppression, args.edgeoffset, args.fluxthreshold)
     else:
         data.moresane_by_scale(args.startscale, args.stopscale, args.subregion, args.sigmalevel, args.loopgain,
                                args.tolerance, args.accuracy, args.majorloopmiter, args.minorloopmiter, args.allongpu,
                                args.decommode,  args.corecount, args.convdevice, args.convmode, args.extractionmode,
-                               args.enforcepositivity, args.edgesuppression, args.edgeoffset)
+                               args.enforcepositivity, args.edgesuppression, args.edgeoffset, args.fluxthreshold)
 
     end_time = time.time()
     logger.info("Elapsed time was %s." % (time.strftime('%H:%M:%S', time.gmtime(end_time - start_time))))

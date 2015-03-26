@@ -96,4 +96,7 @@ def handle_parser():
 
     parser.add_argument("-m", "--mask", help="File name and location of the input .fits mask.", default=None)
 
+    parser.add_argument("-ft", "--fluxthreshold", help="Flux threshold level for shallow deconvolution.", default=0,
+                        type=float)
+
     return parser.parse_args()
