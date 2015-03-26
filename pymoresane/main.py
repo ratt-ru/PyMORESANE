@@ -642,7 +642,7 @@ class FitsImage:
         """
         data = data.reshape(1, 1, data.shape[0], data.shape[0])
         new_file = pyfits.PrimaryHDU(data,self.img_hdu_list[0].header)
-        new_file.writeto("{}.fits".format(name), clobber=True)
+        new_file.writeto("{}".format(name), clobber=True)
 
     def make_logger(self, level="INFO"):
         """
@@ -699,11 +699,22 @@ def main():
     end_time = time.time()
     logger.info("Elapsed time was %s." % (time.strftime('%H:%M:%S', time.gmtime(end_time - start_time))))
 
-    data.save_fits(data.model, args.outputname+"_model")
-    data.save_fits(data.residual, args.outputname+"_residual")
+    if args.modelname is None:
+        data.save_fits(data.model, args.outputname+"_model.fits")
+    else:
+        data.save_fits(data.model, args.modelname)
+
+    if args.residualname is None:
+        data.save_fits(data.residual, args.outputname+"_residual.fits")
+    else:
+        data.save_fits(data.residual, args.residualname)
 
     data.restore()
-    data.save_fits(data.restored, args.outputname+"_restored")
+
+    if args.restoredname is None:
+        data.save_fits(data.restored, args.outputname+"_restored.fits")
+    else:
+        data.save_fits(data.restored, args.restoredname)
 
     # test.moresane(scale_count = 9, major_loop_miter=100, minor_loop_miter=30, tolerance=0.8, \
     #                 conv_mode="linear", accuracy=1e-6, loop_gain=0.2, enforce_positivity=True, sigma_level=5,

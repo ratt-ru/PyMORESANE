@@ -99,4 +99,11 @@ def handle_parser():
     parser.add_argument("-ft", "--fluxthreshold", help="Flux threshold level for shallow deconvolution.", default=0,
                         type=float)
 
+    parser.add_argument("-rn", "--residualname", help="Specific residual image name.", default=None)
+
+    parser.add_argument("-mn", "--modelname", help="Specific model image name.", default=None)
+
+    parser.add_argument("-rsn", "--restoredname", help="Specific restored image name.", default=None)
+
+
     return parser.parse_args()
