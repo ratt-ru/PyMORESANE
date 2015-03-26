@@ -48,6 +48,7 @@ class FitsImage:
 
         if self.mask_name is not None:
             self.mask = pyfits.open("{}".format(mask_name))[0].data
+            self.mask = self.mask.reshape(self.mask.shape[-2], self.mask.shape[-1])
 
         self.dirty_data_shape = self.dirty_data.shape
         self.psf_data_shape = self.psf_data.shape
