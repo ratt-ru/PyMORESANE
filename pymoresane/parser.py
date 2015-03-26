@@ -94,4 +94,6 @@ def handle_parser():
     parser.add_argument("-ll", "--loglevel", help="Specify logging level.", default="INFO"
                                                   , choices=["DEBUG","INFO", "WARNING", "ERROR","CRITICAL"])
 
+    parser.add_argument("-m", "--mask", help="File name and location of the input .fits mask.", default=None)
+
     return parser.parse_args()

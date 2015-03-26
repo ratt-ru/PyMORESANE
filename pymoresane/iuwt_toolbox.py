@@ -10,6 +10,8 @@ try:
 except:
     print "Pycuda unavailable - GPU mode will fail."
 
+import pyfits
+
 def threshold(in1, sigma_level=4):
     """
     This function performs the thresholding of the values in array in1 based on the estimated standard deviation
@@ -34,7 +36,8 @@ def threshold(in1, sigma_level=4):
         out1 = (in1>(sigma_level*threshold_level))*in1
     else:
         for i in range(in1.shape[0]):
-            threshold_level = np.median(np.abs(in1[i,:,:]))/0.6745          # MAD estimator for normal distribution.
+            threshold_level = np.median(np.abs(in1[i,in1[i,:,:]!=0]))/0.6745          # MAD estimator for normal
+            # distribution.
             out1[i,:,:] = (in1[i,:,:]>(sigma_level*threshold_level))*in1[i,:,:]
 
     return out1

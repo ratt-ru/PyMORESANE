@@ -16,15 +16,17 @@ class FitsImage:
     """A class for the manipulation of .fits images - in particular for
     implementing deconvolution."""
 
-    def __init__(self, image_name, psf_name):
+    def __init__(self, image_name, psf_name, mask_name=None):
         """
         Opens the original .fits images specified by imagename and psfname and stores their contents in appropriate
         variables for later use. Also initialises variables to store the sizes of the psf and dirty image as these
-        quantities are used repeatedly.
+        quantities are used repeatedly. In the event that a deconvolution mask is specified, it is stored as an
+        object attribute.
 
         INPUTS:
         image_name  (no default):   Name of the input .fits file containing the dirty map.
         psf_name    (no default):   Name of the input .fits file containing the PSF.
+        mask_name   (default=None): Name of the input .fits file containing a deconvolution mask.
         """
 
         self.image_name = image_name
@@ -41,6 +43,11 @@ class FitsImage:
 
         self.dirty_data = (self.img_hdu_list[0].data[img_slice]).astype(np.float32)
         self.psf_data = (self.psf_hdu_list[0].data[psf_slice]).astype(np.float32)
+
+        self.mask_name = mask_name
+
+        if self.mask_name is not None:
+            self.mask = pyfits.open("{}".format(mask_name))[0].data
 
         self.dirty_data_shape = self.dirty_data.shape
         self.psf_data_shape = self.psf_data.shape
@@ -77,7 +84,7 @@ class FitsImage:
                                                 exit condition when the SNR is does not reach a maximum.
         all_on_gpu          (default=False):    Boolean specifier to toggle all gpu modes on.
         decom_mode          (default='ser'):    Specifier for decomposition mode - serial, multiprocessing, or gpu.
-        core_count          (default=1):        For multiprocessing, specifies the number of cores.
+        core_count          (default=1):        For multiprocessing, specifies clean_mask = self.mask[subregion_slice]the number of cores.
         conv_device         (default='cpu'):    Specifier for device to be used - cpu or gpu.
         conv_mode           (default='linear'): Specifier for convolution mode - linear or circular.
         extraction_mode     (default='cpu'):    Specifier for mode to be used - cpu or gpu.
@@ -121,7 +128,10 @@ class FitsImage:
         subregion_slice = tuple([slice(self.dirty_data_shape[0]/2-subregion/2, self.dirty_data_shape[0]/2+subregion/2),
                                  slice(self.dirty_data_shape[1]/2-subregion/2, self.dirty_data_shape[1]/2+subregion/2)])
 
-        dirty_subregion = self.dirty_data[subregion_slice]
+        if self.mask_name is None:
+            dirty_subregion = self.dirty_data[subregion_slice]
+        else:
+            dirty_subregion = self.dirty_data[subregion_slice]*self.mask[subregion_slice]
 
         if np.all(np.array(self.psf_data_shape)==2*np.array(self.dirty_data_shape)):
             psf_subregion = self.psf_data[self.psf_data_shape[0]/2-subregion/2:self.psf_data_shape[0]/2+subregion/2,
@@ -481,7 +491,10 @@ class FitsImage:
 
                 # The current residual becomes the dirty image for the subsequent iteration.
 
-                dirty_subregion = residual[subregion_slice]
+                if self.mask_name is None:
+                    dirty_subregion = residual[subregion_slice]
+                else:
+                    dirty_subregion = residual[subregion_slice]*self.mask[subregion_slice]
 
                 major_loop_niter += 1
                 logger.info("{} major loop iterations performed.".format(major_loop_niter))
@@ -659,7 +672,9 @@ class FitsImage:
 def main():
     args = pparser.handle_parser()
 
-    data = FitsImage(args.dirty, args.psf)
+    print args.mask
+
+    data = FitsImage(args.dirty, args.psf, args.mask)
 
     logger = data.make_logger(args.loglevel)
     logger.info("Parameters:\n" + str(args)[10:-1])
