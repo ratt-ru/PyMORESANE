@@ -38,9 +38,9 @@ docstrings/comments in the code are very detailed.
 
 Example usage:
 
-Simple: **runsane dirty.fits psf.fits output_name**
-Long options: **runsane dirty.fits psf.fits output_name --enforcepositivity**
-Short options: **runsane dirty.fits psf.fits output_name -ep**
+  * Simple: **runsane dirty.fits psf.fits output_name**
+  * Long options: **runsane dirty.fits psf.fits output_name --enforcepositivity**
+  * Short options: **runsane dirty.fits psf.fits output_name -ep**
 
 ## AUTHOR
 
