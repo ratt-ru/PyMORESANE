@@ -32,11 +32,15 @@ $ python setup.py install
 
 ## USAGE
 
-Running pymoresane.py is as simple as typing pymoresane.py followed by the
+Running PyMORESANE after setup is as simple as typing runsane followed by the
 inputs you desire. runsane --help should provide some assistance, otherwise the
 docstrings/comments in the code are very detailed.
 
+Example usage:
 
+Simple: **runsane dirty.fits psf.fits output_name**
+Long options: **runsane dirty.fits psf.fits output_name --enforcepositivity**
+Short options: **runsane dirty.fits psf.fits output_name -ep**
 
 ## AUTHOR
 
