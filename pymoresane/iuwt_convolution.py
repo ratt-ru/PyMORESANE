@@ -1,4 +1,5 @@
 import numpy as np
+import traceback
 
 try:
     import pycuda.driver as drv
@@ -10,6 +11,7 @@ try:
     from scikits.cuda.fft import fft
     from scikits.cuda.fft import ifft
 except:
+    traceback.print_exc()
     print "Pycuda unavailable - GPU mode will fail."
 
 

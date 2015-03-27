@@ -1,6 +1,7 @@
 import numpy as np
 import multiprocessing as mp
 import ctypes
+import traceback
 
 try:
     import pycuda.driver as drv
@@ -9,6 +10,7 @@ try:
     import pycuda.gpuarray as gpuarray
     from pycuda.compiler import SourceModule
 except ImportError:
+    traceback.print_exc()
     print "Pycuda unavailable - GPU mode will fail."
 
 

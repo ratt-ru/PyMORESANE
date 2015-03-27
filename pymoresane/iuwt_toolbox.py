@@ -1,5 +1,6 @@
 import numpy as np
 from scipy import ndimage
+import traceback
 
 try:
     import pycuda.driver as drv
@@ -8,6 +9,7 @@ try:
     import pycuda.gpuarray as gpuarray
     from pycuda.compiler import SourceModule
 except:
+    traceback.print_exc()
     print "Pycuda unavailable - GPU mode will fail."
 
 import pyfits
