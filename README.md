@@ -7,6 +7,7 @@ for a full description of the algorithm, and
 for earlier work).
 
 ## BASIC INSTALLATION
+Resaonbly up-to-date binary packages of PyMORESANE are available via the [radio-astro repository](https://github.com/radio-astro/packaging). Look for the ```python-pymoresane``` package. If you must install from source, read on.
 
 Requirements:
   * [numpy](http://www.scipy.org/install.html)
