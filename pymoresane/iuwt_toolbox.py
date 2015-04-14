@@ -219,7 +219,7 @@ def gpu_source_extraction(in1, tolerance, store_on_gpu):
         gpu_objects_page = gpuarray.to_gpu_async(objects[i,:,:].astype(np.int32))
 
         for j in labels:
-            label = gpuarray.to_gpu_async(j)
+            label = gpuarray.to_gpu_async(np.array(j))
             gpu_mask_kernel1(gpu_objects_page, label, block=(32,32,1), grid=(in1.shape[1]//32, in1.shape[1]//32))
 
         gpu_mask_kernel2(gpu_objects_page, block=(32,32,1), grid=(in1.shape[1]//32, in1.shape[1]//32))
