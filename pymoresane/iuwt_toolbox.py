@@ -34,7 +34,7 @@ def threshold(in1, sigma_level=4):
     # discards all negative coefficients.
 
     if len(in1.shape)==2:
-        threshold_level = np.median(np.abs(in1))/0.6745                     # MAD estimator for normal distribution.
+        threshold_level = np.median(np.abs(in1[in1!=0]))/0.6745                     # MAD estimator for normal distribution.
         out1 = (in1>(sigma_level*threshold_level))*in1
     else:
         for i in range(in1.shape[0]):

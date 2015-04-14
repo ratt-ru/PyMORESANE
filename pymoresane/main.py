@@ -11,7 +11,6 @@ import time
 
 logger = logging.getLogger(__name__)
 
-
 class FitsImage:
     """A class for the manipulation of .fits images - in particular for
     implementing deconvolution."""
@@ -49,6 +48,7 @@ class FitsImage:
         if self.mask_name is not None:
             self.mask = pyfits.open("{}".format(mask_name))[0].data
             self.mask = self.mask.reshape(self.mask.shape[-2], self.mask.shape[-1])
+            self.mask = self.mask/np.max(self.mask)
 
         self.dirty_data_shape = self.dirty_data.shape
         self.psf_data_shape = self.psf_data.shape
@@ -559,8 +559,6 @@ class FitsImage:
         """
 
         # The following preserves the dirty image as it will be changed on every iteration.
-
-        print(flux_threshold)
 
         dirty_data = self.dirty_data
 
