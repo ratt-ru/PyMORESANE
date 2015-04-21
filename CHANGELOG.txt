@@ -1,0 +1,7 @@
+v0.3.0
+
+Restored GPU functionality.
+Incorporated masking.
+Removed power of two restriction for CPU code.
+Added better GPU error trapping.
+Fixed some minor bugs.
