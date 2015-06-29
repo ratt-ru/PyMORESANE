@@ -1,3 +1,7 @@
+v0.3.1
+
+Minor update to thresholding procedure to cope with negative flux scenarios.
+
 v0.3.0
 
 Restored GPU functionality.

@@ -674,6 +674,7 @@ class FitsImage:
 
 
 def main():
+    
     args = pparser.handle_parser()
 
     data = FitsImage(args.dirty, args.psf, args.mask)
