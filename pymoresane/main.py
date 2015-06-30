@@ -677,6 +677,10 @@ def main():
     
     args = pparser.handle_parser()
 
+    if (args.outputname is None):
+        if (args.residualname is None)|(args.restoredname is None)|(args.modelname is None):
+            raise ValueError("If outputname is unspecified, residualname, restoredname and modelname must be present.")
+
     data = FitsImage(args.dirty, args.psf, args.mask)
 
     logger = data.make_logger(args.loglevel)

@@ -14,7 +14,8 @@ def handle_parser():
 
     parser.add_argument("psf", help="File name and location input psf .fits file.")
 
-    parser.add_argument("outputname", help="File name and location of the output model and residual .fits files.")
+    parser.add_argument("outputname", help="File name and location of the output model and residual .fits files.",
+                        nargs='?', default=None)
 
     parser.add_argument("-sr", "--singlerun", help="Specify whether pymoresane is to be run in scale-by-scale mode or "
                                                    "in single-run mode. Scale-by-scale is usually the better choice."
@@ -104,6 +105,5 @@ def handle_parser():
     parser.add_argument("-mn", "--modelname", help="Specific model image name.", default=None)
 
     parser.add_argument("-rsn", "--restoredname", help="Specific restored image name.", default=None)
-
 
     return parser.parse_args()
