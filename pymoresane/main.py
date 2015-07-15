@@ -8,6 +8,7 @@ import pymoresane.parser as pparser
 from pymoresane.beam_fit import beam_fit
 import time
 
+import pylab as plt
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +65,7 @@ class FitsImage:
     def moresane(self, subregion=None, scale_count=None, sigma_level=4, loop_gain=0.1, tolerance=0.75, accuracy=1e-6,
                  major_loop_miter=100, minor_loop_miter=30, all_on_gpu=False, decom_mode="ser", core_count=1,
                  conv_device='cpu', conv_mode='linear', extraction_mode='cpu', enforce_positivity=False,
-                 edge_suppression=False, edge_offset=0, flux_threshold=0):
+                 edge_suppression=False, edge_offset=0, flux_threshold=0, neg_comp=False):
         """
         Primary method for wavelet analysis and subsequent deconvolution.
 
@@ -350,7 +351,15 @@ class FitsImage:
                 # maximum  at that scale.
 
                 extracted_sources, extracted_sources_mask = \
-                    tools.source_extraction(thresh_slice, tolerance, mode=extraction_mode, store_on_gpu=all_on_gpu)
+                    tools.source_extraction(thresh_slice, tolerance,
+                    mode=extraction_mode, store_on_gpu=all_on_gpu,
+                    neg_comp=neg_comp)
+
+                # for blah in range(extracted_sources.shape[0]):
+                #
+                #     plt.imshow(extracted_sources[blah,:,:],
+                #     interpolation="none")
+                #     plt.show()
 
                 # The wavelet coefficients of the extracted sources are recomposed into a single image,
                 # which should contain only the structures of interest.
@@ -521,7 +530,8 @@ class FitsImage:
     def moresane_by_scale(self, start_scale=1, stop_scale=20, subregion=None, sigma_level=4, loop_gain=0.1,
                           tolerance=0.75, accuracy=1e-6, major_loop_miter=100, minor_loop_miter=30, all_on_gpu=False,
                           decom_mode="ser", core_count=1, conv_device='cpu', conv_mode='linear', extraction_mode='cpu',
-                          enforce_positivity=False, edge_suppression=False, edge_offset=0, flux_threshold=0):
+                          enforce_positivity=False, edge_suppression=False,
+                          edge_offset=0, flux_threshold=0, neg_comp=False):
         """
         Extension of the MORESANE algorithm. This takes a scale-by-scale approach, attempting to remove all sources
         at the lower scales before moving onto the higher ones. At each step the algorithm may return to previous
@@ -574,7 +584,8 @@ class FitsImage:
                           minor_loop_miter=minor_loop_miter, all_on_gpu=all_on_gpu, decom_mode=decom_mode,
                           core_count=core_count, conv_device=conv_device, conv_mode=conv_mode,
                           extraction_mode=extraction_mode, enforce_positivity=enforce_positivity,
-                          edge_suppression=edge_suppression, edge_offset=edge_offset, flux_threshold=flux_threshold)
+                          edge_suppression=edge_suppression, edge_offset=edge_offset,
+                          flux_threshold=flux_threshold, neg_comp=neg_comp)
 
             self.dirty_data = self.residual
 
@@ -688,16 +699,20 @@ def main():
 
     start_time = time.time()
 
+    print args.negcomp
+
     if args.singlerun:
         data.moresane(args.subregion, args.scalecount, args.sigmalevel, args.loopgain, args.tolerance, args.accuracy,
                       args.majorloopmiter, args.minorloopmiter, args.allongpu, args.decommode, args.corecount,
                       args.convdevice, args.convmode, args.extractionmode, args.enforcepositivity,
-                      args.edgesuppression, args.edgeoffset, args.fluxthreshold)
+                      args.edgesuppression, args.edgeoffset,
+                      args.fluxthreshold, args.negcomp)
     else:
         data.moresane_by_scale(args.startscale, args.stopscale, args.subregion, args.sigmalevel, args.loopgain,
                                args.tolerance, args.accuracy, args.majorloopmiter, args.minorloopmiter, args.allongpu,
                                args.decommode,  args.corecount, args.convdevice, args.convmode, args.extractionmode,
-                               args.enforcepositivity, args.edgesuppression, args.edgeoffset, args.fluxthreshold)
+                               args.enforcepositivity, args.edgesuppression,
+                               args.edgeoffset, args.fluxthreshold, args.negcomp)
 
     end_time = time.time()
     logger.info("Elapsed time was %s." % (time.strftime('%H:%M:%S', time.gmtime(end_time - start_time))))

@@ -106,4 +106,10 @@ def handle_parser():
 
     parser.add_argument("-rsn", "--restoredname", help="Specific restored image name.", default=None)
 
+    parser.add_argument("-nc", "--negcomp", help="Specify whether "
+                                                 "anticorrelations are to be "
+                                                 "used in the source "
+                                                 "extraction step."
+                                                 , action='store_true')
+
     return parser.parse_args()

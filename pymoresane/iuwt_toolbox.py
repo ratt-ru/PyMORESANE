@@ -12,7 +12,7 @@ except:
     traceback.print_exc()
     print "Pycuda unavailable - GPU mode will fail."
 
-import pyfits
+import pylab as plt
 
 def threshold(in1, sigma_level=4):
     """
@@ -44,7 +44,8 @@ def threshold(in1, sigma_level=4):
 
     return out1
 
-def source_extraction(in1, tolerance, mode="cpu", store_on_gpu=False):
+def source_extraction(in1, tolerance, mode="cpu", store_on_gpu=False,
+                      neg_comp=False):
     """
     Convenience function for allocating work to cpu or gpu, depending on the selected mode.
 
@@ -58,11 +59,12 @@ def source_extraction(in1, tolerance, mode="cpu", store_on_gpu=False):
     """
 
     if mode=="cpu":
-        return cpu_source_extraction(in1, tolerance)
+        return cpu_source_extraction(in1, tolerance, neg_comp)
     elif mode=="gpu":
-        return gpu_source_extraction(in1, tolerance, store_on_gpu)
+        return gpu_source_extraction(in1, tolerance, store_on_gpu, neg_comp)
 
-def cpu_source_extraction(in1, tolerance):
+
+def cpu_source_extraction(in1, tolerance, neg_comp):
     """
     The following function determines connectivity within a given wavelet decomposition. These connected and labelled
     structures are thresholded to within some tolerance of the maximum coefficient at the scale. This determines
@@ -91,16 +93,25 @@ def cpu_source_extraction(in1, tolerance):
     # calculated here.
 
     for i in range(in1.shape[0]):
-        scale_maxima[i] = np.max(in1[i,:,:])
+        if neg_comp:
+            scale_maxima[i] = np.max(abs(in1[i,:,:]))
+        else:
+            scale_maxima[i] = np.max(in1[i,:,:])
         objects[i,:,:], object_count[i] = ndimage.label(in1[i,:,:], structure=[[1,1,1],[1,1,1],[1,1,1]])
 
     # The following removes the insignificant objects and then extracts the remaining ones.
 
     for i in range(-1,-in1.shape[0]-1,-1):
-        if i==(-1):
-            tmp = (in1[i,:,:]>=(tolerance*scale_maxima[i]))*objects[i,:,:]
+        if neg_comp:
+            if i==(-1):
+                tmp = (abs(in1[i,:,:])>=(tolerance*scale_maxima[i]))*objects[i,:,:]
+            else:
+                tmp = (abs(in1[i,:,:])>=(tolerance*scale_maxima[i]))*objects[i,:,:]*objects[i+1,:,:]
         else:
-            tmp = (in1[i,:,:]>=(tolerance*scale_maxima[i]))*objects[i,:,:]*objects[i+1,:,:]
+            if i==(-1):
+                tmp = (in1[i,:,:]>=(tolerance*scale_maxima[i]))*objects[i,:,:]
+            else:
+                tmp = (in1[i,:,:]>=(tolerance*scale_maxima[i]))*objects[i,:,:]*objects[i+1,:,:]
 
         labels = np.unique(tmp[tmp>0])
 
@@ -112,7 +123,7 @@ def cpu_source_extraction(in1, tolerance):
 
     return objects*in1, objects
 
-def gpu_source_extraction(in1, tolerance, store_on_gpu):
+def gpu_source_extraction(in1, tolerance, store_on_gpu, neg_comp):
     """
     The following function determines connectivity within a given wavelet decomposition. These connected and labelled
     structures are thresholded to within some tolerance of the maximum coefficient at the scale. This determines
@@ -187,7 +198,10 @@ def gpu_source_extraction(in1, tolerance, store_on_gpu):
     # calculated here.
 
     for i in range(in1.shape[0]):
-        scale_maxima[i] = np.max(in1[i,:,:])
+        if neg_comp:
+            scale_maxima[i] = np.max(abs(in1[i,:,:]))
+        else:
+            scale_maxima[i] = np.max(in1[i,:,:])
         objects[i,:,:], object_count[i] = ndimage.label(in1[i,:,:], structure=[[1,1,1],[1,1,1],[1,1,1]])
 
     # The following bind the pycuda kernels to the expressions on the left.
@@ -209,10 +223,16 @@ def gpu_source_extraction(in1, tolerance, store_on_gpu):
 
         condition = tolerance*scale_maxima[i]
 
-        if i==(-1):
-            tmp = (in1[i,:,:]>=condition)*objects[i,:,:]
+        if neg_comp:
+            if i==(-1):
+                tmp = (abs(in1[i,:,:])>=condition)*objects[i,:,:]
+            else:
+                tmp = (abs(in1[i,:,:])>=condition)*objects[i,:,:]*objects[i+1,:,:]
         else:
-            tmp = (in1[i,:,:]>=condition)*objects[i,:,:]*objects[i+1,:,:]
+            if i==(-1):
+                tmp = (in1[i,:,:]>=condition)*objects[i,:,:]
+            else:
+                tmp = (in1[i,:,:]>=condition)*objects[i,:,:]*objects[i+1,:,:]
 
         labels = (np.unique(tmp[tmp>0])).astype(np.int32)
 

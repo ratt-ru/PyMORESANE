@@ -1,3 +1,8 @@
+v0.3.3
+Added a new option "--negcomp", "-nc" which turns on anticorrelation
+discovery in the source extraction step. This feature is provided as is
+and may cause odd behaviour.
+
 v0.3.2
 
 Minor update which fixes parser requirements and adds help PDF.
