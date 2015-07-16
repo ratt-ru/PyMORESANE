@@ -251,7 +251,7 @@ class FitsImage:
 
         model = np.zeros_like(self.dirty_data)
 
-        std_current = 1
+        std_current = 1000
         std_last = 1
         std_ratio = 1
 
@@ -491,7 +491,7 @@ class FitsImage:
                 # The following assesses whether or not the residual has improved.
 
                 std_last = std_current
-                std_current = np.std(residual)
+                std_current = np.std(residual[subregion_slice])
                 std_ratio = (std_last-std_current)/std_last
 
                 # If the most recent deconvolution step is poor, the following reverts the changes so that the
@@ -698,8 +698,6 @@ def main():
     logger.info("Parameters:\n" + str(args)[10:-1])
 
     start_time = time.time()
-
-    print args.negcomp
 
     if args.singlerun:
         data.moresane(args.subregion, args.scalecount, args.sigmalevel, args.loopgain, args.tolerance, args.accuracy,

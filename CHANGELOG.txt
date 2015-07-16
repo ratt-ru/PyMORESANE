@@ -1,3 +1,6 @@
+v0.3.4
+Fixed a bug which prevented convergence in very bright fields. 
+
 v0.3.3
 Added a new option "--negcomp", "-nc" which turns on anticorrelation
 discovery in the source extraction step. This feature is provided as is
