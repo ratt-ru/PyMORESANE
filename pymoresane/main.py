@@ -132,10 +132,7 @@ class FitsImage:
         subregion_slice = tuple([slice(self.dirty_data_shape[0]/2-subregion/2, self.dirty_data_shape[0]/2+subregion/2),
                                  slice(self.dirty_data_shape[1]/2-subregion/2, self.dirty_data_shape[1]/2+subregion/2)])
 
-        if self.mask_name is None:
-            dirty_subregion = self.dirty_data[subregion_slice]
-        else:
-            dirty_subregion = self.dirty_data[subregion_slice]*self.mask[subregion_slice]
+        dirty_subregion = self.dirty_data[subregion_slice]
 
         if np.all(np.array(self.psf_data_shape)==2*np.array(self.dirty_data_shape)):
             psf_subregion = self.psf_data[self.psf_data_shape[0]/2-subregion/2:self.psf_data_shape[0]/2+subregion/2,
@@ -291,7 +288,15 @@ class FitsImage:
 
                 if min_scale==0:
                     dirty_decomposition = iuwt.iuwt_decomposition(dirty_subregion, scale_count, 0, decom_mode, core_count)
-                    dirty_decomposition_thresh = tools.threshold(dirty_decomposition, sigma_level=sigma_level)
+
+                    thresholds = tools.estimate_threshold(dirty_decomposition)
+
+                    if self.mask_name is not None:
+                        dirty_decomposition = iuwt.iuwt_decomposition(dirty_subregion*self.mask[subregion_slice], scale_count, 0,
+                            decom_mode, core_count)
+
+                    dirty_decomposition_thresh = tools.apply_threshold(dirty_decomposition, thresholds,
+                        sigma_level=sigma_level)
 
                     # If edge_supression is desired, the following simply masks out the offending wavelet coefficients.
 
@@ -504,10 +509,7 @@ class FitsImage:
 
                 # The current residual becomes the dirty image for the subsequent iteration.
 
-                if self.mask_name is None:
-                    dirty_subregion = residual[subregion_slice]
-                else:
-                    dirty_subregion = residual[subregion_slice]*self.mask[subregion_slice]
+                dirty_subregion = residual[subregion_slice]
 
                 major_loop_niter += 1
                 logger.info("{} major loop iterations performed.".format(major_loop_niter))

@@ -14,7 +14,26 @@ except:
 
 import pylab as plt
 
-def threshold(in1, sigma_level=4):
+def estimate_threshold(in1):
+    """
+    This function estimates the noise using the MAD estimator.
+
+    INPUTS:
+    in1             (no default):   The array from which the noise is estimated
+
+    OUTPUTS:
+    out1                            An array of per-scale noise estimates.
+    """
+
+    out1 = np.empty([in1.shape[0]])
+
+    for i in range(in1.shape[0]):
+        out1[i] = np.median(np.abs(in1[i,in1.shape[1]/4:-in1.shape[1]/4,
+                                         in1.shape[2]/4:-in1.shape[2]/4]))/0.6745
+
+    return out1
+
+def apply_threshold(in1, threshold, sigma_level=4):
     """
     This function performs the thresholding of the values in array in1 based on the estimated standard deviation
     given by the MAD (median absolute deviation) estimator about zero.
@@ -34,13 +53,10 @@ def threshold(in1, sigma_level=4):
     # discards all negative coefficients.
 
     if len(in1.shape)==2:
-        threshold_level = np.median(np.abs(in1[in1!=0]))/0.6745                     # MAD estimator for normal distribution.
-        out1 = (np.abs(in1)>(sigma_level*threshold_level))*in1
+        out1 = (np.abs(in1)>(sigma_level*threshold))*in1
     else:
         for i in range(in1.shape[0]):
-            threshold_level = np.median(np.abs(in1[i,in1[i,:,:]!=0]))/0.6745          # MAD estimator for normal
-            # distribution.
-            out1[i,:,:] = (np.abs(in1[i,:,:])>(sigma_level*threshold_level))*in1[i,:,:]
+            out1[i,:,:] = (np.abs(in1[i,:,:])>(sigma_level*threshold[i]))*in1[i,:,:]
 
     return out1
 
