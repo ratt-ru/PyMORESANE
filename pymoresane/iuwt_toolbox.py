@@ -14,7 +14,7 @@ except:
 
 import pylab as plt
 
-def estimate_threshold(in1):
+def estimate_threshold(in1, edge_excl=0, int_excl=0):
     """
     This function estimates the noise using the MAD estimator.
 
@@ -26,10 +26,24 @@ def estimate_threshold(in1):
     """
 
     out1 = np.empty([in1.shape[0]])
+    mid = in1.shape[1]/2
+
+    if (edge_excl!=0) | (int_excl!=0):
+
+        if edge_excl!=0:
+            mask = np.zeros([in1.shape[1], in1.shape[2]])
+            mask[edge_excl:-edge_excl, edge_excl:-edge_excl] = 1
+        else:
+            mask = np.ones([in1.shape[1], in1.shape[2]])
+
+        if int_excl!=0:
+            mask[mid-int_excl:mid+int_excl, mid-int_excl:mid+int_excl] = 0
+
+    else:
+        mask = np.ones([in1.shape[1], in1.shape[2]])
 
     for i in range(in1.shape[0]):
-        out1[i] = np.median(np.abs(in1[i,in1.shape[1]/4:-in1.shape[1]/4,
-                                         in1.shape[2]/4:-in1.shape[2]/4]))/0.6745
+        out1[i] = np.median(np.abs(in1[i,mask==1]))/0.6745
 
     return out1
 

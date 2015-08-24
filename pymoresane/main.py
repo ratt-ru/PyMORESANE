@@ -8,6 +8,7 @@ import pymoresane.parser as pparser
 from pymoresane.beam_fit import beam_fit
 import time
 
+from scipy.signal import fftconvolve
 import pylab as plt
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,8 @@ class FitsImage:
             self.mask = pyfits.open("{}".format(mask_name))[0].data
             self.mask = self.mask.reshape(self.mask.shape[-2], self.mask.shape[-1])
             self.mask = self.mask/np.max(self.mask)
+            self.mask = fftconvolve(self.mask,np.ones([5,5]),mode="same")
+            self.mask = self.mask/np.max(self.mask)
 
         self.dirty_data_shape = self.dirty_data.shape
         self.psf_data_shape = self.psf_data.shape
@@ -65,7 +68,8 @@ class FitsImage:
     def moresane(self, subregion=None, scale_count=None, sigma_level=4, loop_gain=0.1, tolerance=0.75, accuracy=1e-6,
                  major_loop_miter=100, minor_loop_miter=30, all_on_gpu=False, decom_mode="ser", core_count=1,
                  conv_device='cpu', conv_mode='linear', extraction_mode='cpu', enforce_positivity=False,
-                 edge_suppression=False, edge_offset=0, flux_threshold=0, neg_comp=False):
+                 edge_suppression=False, edge_offset=0, flux_threshold=0,
+                 neg_comp=False, edge_excl=0, int_excl=0):
         """
         Primary method for wavelet analysis and subsequent deconvolution.
 
@@ -289,7 +293,7 @@ class FitsImage:
                 if min_scale==0:
                     dirty_decomposition = iuwt.iuwt_decomposition(dirty_subregion, scale_count, 0, decom_mode, core_count)
 
-                    thresholds = tools.estimate_threshold(dirty_decomposition)
+                    thresholds = tools.estimate_threshold(dirty_decomposition, edge_excl, int_excl)
 
                     if self.mask_name is not None:
                         dirty_decomposition = iuwt.iuwt_decomposition(dirty_subregion*self.mask[subregion_slice], scale_count, 0,
@@ -489,6 +493,8 @@ class FitsImage:
 
             if max_coeff>0:
 
+                # x[abs(x)<0.8*np.max(np.abs(x))] = 0
+
                 model[subregion_slice] += loop_gain*x
 
                 residual = self.dirty_data - conv.fft_convolve(model, psf_data_fft, conv_device, conv_mode)
@@ -533,7 +539,7 @@ class FitsImage:
                           tolerance=0.75, accuracy=1e-6, major_loop_miter=100, minor_loop_miter=30, all_on_gpu=False,
                           decom_mode="ser", core_count=1, conv_device='cpu', conv_mode='linear', extraction_mode='cpu',
                           enforce_positivity=False, edge_suppression=False,
-                          edge_offset=0, flux_threshold=0, neg_comp=False):
+                          edge_offset=0, flux_threshold=0, neg_comp=False, edge_excl=0, int_excl=0):
         """
         Extension of the MORESANE algorithm. This takes a scale-by-scale approach, attempting to remove all sources
         at the lower scales before moving onto the higher ones. At each step the algorithm may return to previous
@@ -587,7 +593,8 @@ class FitsImage:
                           core_count=core_count, conv_device=conv_device, conv_mode=conv_mode,
                           extraction_mode=extraction_mode, enforce_positivity=enforce_positivity,
                           edge_suppression=edge_suppression, edge_offset=edge_offset,
-                          flux_threshold=flux_threshold, neg_comp=neg_comp)
+                          flux_threshold=flux_threshold, neg_comp=neg_comp,
+                          edge_excl=edge_excl, int_excl=int_excl)
 
             self.dirty_data = self.residual
 
@@ -706,13 +713,15 @@ def main():
                       args.majorloopmiter, args.minorloopmiter, args.allongpu, args.decommode, args.corecount,
                       args.convdevice, args.convmode, args.extractionmode, args.enforcepositivity,
                       args.edgesuppression, args.edgeoffset,
-                      args.fluxthreshold, args.negcomp)
+                      args.fluxthreshold, args.negcomp, args.edgeexcl,
+                      args.intexcl)
     else:
         data.moresane_by_scale(args.startscale, args.stopscale, args.subregion, args.sigmalevel, args.loopgain,
                                args.tolerance, args.accuracy, args.majorloopmiter, args.minorloopmiter, args.allongpu,
                                args.decommode,  args.corecount, args.convdevice, args.convmode, args.extractionmode,
                                args.enforcepositivity, args.edgesuppression,
-                               args.edgeoffset, args.fluxthreshold, args.negcomp)
+                               args.edgeoffset, args.fluxthreshold,
+                               args.negcomp, args.edgeexcl, args.intexcl)
 
     end_time = time.time()
     logger.info("Elapsed time was %s." % (time.strftime('%H:%M:%S', time.gmtime(end_time - start_time))))

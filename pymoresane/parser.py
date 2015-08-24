@@ -112,4 +112,14 @@ def handle_parser():
                                                  "extraction step."
                                                  , action='store_true')
 
+    parser.add_argument("-ee", "--edgeexcl", help="Number of pixels to "
+                                                  "exclude from the edges "
+                                                  "when estimating the noise"
+                                                  ".", type=int, default=0)
+
+    parser.add_argument("-ie", "--intexcl", help="Number of pixels to "
+                                                  "exclude from the center "
+                                                  "when estimating the noise"
+                                                  ".", type=int, default=0)
+
     return parser.parse_args()
