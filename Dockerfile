@@ -4,9 +4,9 @@ MAINTAINER <sphemakh@gmail.com>
 
 RUN apt-get update && apt-get install -y python-numpy \
     python-scipy \
-    python-pyfits
+    python-pyfits \
+    python-matplotlib
 
-RUN apt-get install python-matplotlib -y
 # Not adding GPU depencies for now
 
 ADD . /tmp/moresane

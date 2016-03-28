@@ -1,6 +1,7 @@
 numpy
 scipy
 pyfits
+matplotlib
 pycuda
 scikits.cuda
 
