@@ -1,22 +1,22 @@
 import logging
-import pyfits
+import time
+
+import astropy.io.fits as pyfits
 import numpy as np
+
 import pymoresane.iuwt as iuwt
 import pymoresane.iuwt_convolution as conv
 import pymoresane.iuwt_toolbox as tools
 import pymoresane.parser as pparser
 from pymoresane.beam_fit import beam_fit
-import time
 
 from scipy.signal import fftconvolve
-import pylab as plt
 
 logger = logging.getLogger(__name__)
 
-class FitsImage:
+class FitsImage(DataImage):
     """A class for the manipulation of .fits images - in particular for
     implementing deconvolution."""
-
     def __init__(self, image_name, psf_name, mask_name=None):
         """
         Opens the original .fits images specified by imagename and psfname and stores their contents in appropriate
@@ -42,9 +42,6 @@ class FitsImage:
         img_slice = self.handle_input(self.img_hdr)
         psf_slice = self.handle_input(self.psf_hdr)
 
-        self.dirty_data = (self.img_hdu_list[0].data[img_slice]).astype(np.float32)
-        self.psf_data = (self.psf_hdu_list[0].data[psf_slice]).astype(np.float32)
-
         self.mask_name = mask_name
 
         if self.mask_name is not None:
@@ -54,11 +51,34 @@ class FitsImage:
             self.mask = fftconvolve(self.mask,np.ones([5,5]),mode="same")
             self.mask = self.mask/np.max(self.mask)
 
-        self.dirty_data_shape = self.dirty_data.shape
-        self.psf_data_shape = self.psf_data.shape
+        super(FitsImage, self).__init__(dirty_data=(self.img_hdu_list[0].data[img_slice]), psf_data=(self.psf_hdu_list[0].data[psf_slice]))
+
 
         self.img_hdu_list.close()
         self.psf_hdu_list.close()
+
+class DataImage(object):
+    """ Base class for managing the algorithm. Doesn't care where the dirty image and PSF come from"""
+
+    def __init__(self, dirty_data, psf_data, mask_data=None):
+    #def __init__(self, image_name, psf_name, mask_name=None):
+        """
+        Opens the original .fits images specified by imagename and psfname and stores their contents in appropriate
+        variables for later use. Also initialises variables to store the sizes of the psf and dirty image as these
+        quantities are used repeatedly. In the event that a deconvolution mask is specified, it is stored as an
+        object attribute.
+
+        INPUTS:
+        image_name  (no default):   Name of the input .fits file containing the dirty map.
+        psf_name    (no default):   Name of the input .fits file containing the PSF.
+        mask_name   (default=None): Name of the input .fits file containing a deconvolution mask.
+        """
+
+        self.dirty_data = dirty_data.astype(np.float32)
+        self.psf_data = psf_data.astype(np.float32)
+
+        self.dirty_data_shape = self.dirty_data.shape
+        self.psf_data_shape = self.psf_data.shape
 
         self.complete = False
         self.model = np.zeros_like(self.dirty_data)
@@ -627,10 +647,12 @@ class FitsImage:
             self.restored = np.fft.fftshift(np.fft.irfft2(np.fft.rfft2(self.model)*np.fft.rfft2(clean_beam)))
         self.restored += self.residual
         self.restored = self.restored.astype(np.float32)
-
-        self.img_hdu_list[0].header.update('BMAJ',beam_params[0])
-        self.img_hdu_list[0].header.update('BMIN',beam_params[1])
-        self.img_hdu_list[0].header.update('BPA',beam_params[2])
+        try:
+            self.img_hdu_list[0].header.update('BMAJ',beam_params[0])
+            self.img_hdu_list[0].header.update('BMIN',beam_params[1])
+            self.img_hdu_list[0].header.update('BPA',beam_params[2])
+        except Exception as e:
+            logger.error("Exception in writing beam parameters {}".format(e))
 
     def handle_input(self, input_hdr):
         """
