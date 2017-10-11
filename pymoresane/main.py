@@ -14,54 +14,11 @@ from scipy.signal import fftconvolve
 
 logger = logging.getLogger(__name__)
 
-class FitsImage(DataImage):
-    """A class for the manipulation of .fits images - in particular for
-    implementing deconvolution."""
-    def __init__(self, image_name, psf_name, mask_name=None):
-        """
-        Opens the original .fits images specified by imagename and psfname and stores their contents in appropriate
-        variables for later use. Also initialises variables to store the sizes of the psf and dirty image as these
-        quantities are used repeatedly. In the event that a deconvolution mask is specified, it is stored as an
-        object attribute.
-
-        INPUTS:
-        image_name  (no default):   Name of the input .fits file containing the dirty map.
-        psf_name    (no default):   Name of the input .fits file containing the PSF.
-        mask_name   (default=None): Name of the input .fits file containing a deconvolution mask.
-        """
-
-        self.image_name = image_name
-        self.psf_name = psf_name
-
-        self.img_hdu_list = pyfits.open("{}".format(self.image_name))
-        self.psf_hdu_list = pyfits.open("{}".format(self.psf_name))
-
-        self.img_hdr = self.img_hdu_list[0].header
-        self.psf_hdr = self.psf_hdu_list[0].header
-
-        img_slice = self.handle_input(self.img_hdr)
-        psf_slice = self.handle_input(self.psf_hdr)
-
-        self.mask_name = mask_name
-
-        if self.mask_name is not None:
-            self.mask = pyfits.open("{}".format(mask_name))[0].data
-            self.mask = self.mask.reshape(self.mask.shape[-2], self.mask.shape[-1])
-            self.mask = self.mask/np.max(self.mask)
-            self.mask = fftconvolve(self.mask,np.ones([5,5]),mode="same")
-            self.mask = self.mask/np.max(self.mask)
-
-        super(FitsImage, self).__init__(dirty_data=(self.img_hdu_list[0].data[img_slice]), psf_data=(self.psf_hdu_list[0].data[psf_slice]))
-
-
-        self.img_hdu_list.close()
-        self.psf_hdu_list.close()
 
 class DataImage(object):
     """ Base class for managing the algorithm. Doesn't care where the dirty image and PSF come from"""
 
-    def __init__(self, dirty_data, psf_data, mask_data=None):
-    #def __init__(self, image_name, psf_name, mask_name=None):
+    def __init__(self, dirty_data, psf_data, mask_data, cdelt1, cdelt2):
         """
         Opens the original .fits images specified by imagename and psfname and stores their contents in appropriate
         variables for later use. Also initialises variables to store the sizes of the psf and dirty image as these
@@ -76,6 +33,9 @@ class DataImage(object):
 
         self.dirty_data = dirty_data.astype(np.float32)
         self.psf_data = psf_data.astype(np.float32)
+        if (mask_data is None):
+            self.mask_name = None
+        self.mask = mask_data
 
         self.dirty_data_shape = self.dirty_data.shape
         self.psf_data_shape = self.psf_data.shape
@@ -84,6 +44,11 @@ class DataImage(object):
         self.model = np.zeros_like(self.dirty_data)
         self.residual = np.copy(self.dirty_data)
         self.restored = np.zeros_like(self.dirty_data)
+
+        self.cdelt1 = cdelt1
+        self.cdelt2 = cdelt2
+
+
 
     def moresane(self, subregion=None, scale_count=None, sigma_level=4, loop_gain=0.1, tolerance=0.75, accuracy=1e-6,
                  major_loop_miter=100, minor_loop_miter=30, all_on_gpu=False, decom_mode="ser", core_count=1,
@@ -637,7 +602,7 @@ class DataImage(object):
         """
         This method constructs the restoring beam and then adds the convolution to the residual.
         """
-        clean_beam, beam_params = beam_fit(self.psf_data, self.psf_hdu_list[0].header)
+        clean_beam, beam_params = beam_fit(self.psf_data, self.cdelt1, self.cdelt2)
 
         if np.all(np.array(self.psf_data_shape)==2*np.array(self.dirty_data_shape)):
             self.restored = np.fft.fftshift(np.fft.irfft2(np.fft.rfft2(conv.pad_array(self.model))*np.fft.rfft2(clean_beam)))
@@ -714,6 +679,53 @@ class DataImage(object):
 
         return logger
 
+class FitsImage(DataImage):
+    """A class for the manipulation of .fits images - in particular for
+    implementing deconvolution."""
+    def __init__(self, image_name, psf_name, mask_name=None):
+        """
+        Opens the original .fits images specified by imagename and psfname and stores their contents in appropriate
+        variables for later use. Also initialises variables to store the sizes of the psf and dirty image as these
+        quantities are used repeatedly. In the event that a deconvolution mask is specified, it is stored as an
+        object attribute.
+
+        INPUTS:
+        image_name  (no default):   Name of the input .fits file containing the dirty map.
+        psf_name    (no default):   Name of the input .fits file containing the PSF.
+        mask_name   (default=None): Name of the input .fits file containing a deconvolution mask.
+        """
+
+        self.image_name = image_name
+        self.psf_name = psf_name
+        self.mask_name = mask_name
+
+        self.img_hdu_list = pyfits.open("{}".format(self.image_name))
+        self.psf_hdu_list = pyfits.open("{}".format(self.psf_name))
+
+        self.img_hdr = self.img_hdu_list[0].header
+        self.psf_hdr = self.psf_hdu_list[0].header
+
+        cdelt1 = self.psf_hdr['CDELT1']
+        cdelt2 = self.psf_hdr['CDELT1']
+        
+        img_slice = self.handle_input(self.img_hdr)
+        psf_slice = self.handle_input(self.psf_hdr)
+
+        if self.mask_name is not None:
+            mask = pyfits.open("{}".format(mask_name))[0].data
+            mask = self.mask.reshape(self.mask.shape[-2], self.mask.shape[-1])
+            mask = self.mask/np.max(self.mask)
+            mask = fftconvolve(self.mask,np.ones([5,5]),mode="same")
+            mask = self.mask/np.max(self.mask)
+        else:
+            mask = None
+
+        super(FitsImage, self).__init__(dirty_data=(self.img_hdu_list[0].data[img_slice]), 
+                                        psf_data=(self.psf_hdu_list[0].data[psf_slice]), 
+                                        mask_data=mask, cdelt1=cdelt1, cdelt2=cdelt2)
+
+        self.img_hdu_list.close()
+        self.psf_hdu_list.close()
 
 def main():
     
