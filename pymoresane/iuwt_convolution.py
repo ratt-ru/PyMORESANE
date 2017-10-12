@@ -65,7 +65,7 @@ def fft_convolve(in1, in2, conv_device="cpu", conv_mode="linear", store_on_gpu=F
             fft_in1 = pad_array(in1)
             fft_in2 = in2
 
-            out1_slice = tuple(slice(0.5*sz,1.5*sz) for sz in in1.shape)
+            out1_slice = tuple(slice(int(0.5*sz),int(1.5*sz)) for sz in in1.shape)
 
             return np.require(np.fft.fftshift(np.fft.irfft2(fft_in2*np.fft.rfft2(fft_in1)))[out1_slice], np.float32, 'C')
 

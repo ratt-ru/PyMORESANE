@@ -13,11 +13,11 @@ import pylab as plt
 
 logger = logging.getLogger(__name__)
 
-class FitsImage:
+class Image:
     """A class for the manipulation of .fits images - in particular for
     implementing deconvolution."""
 
-    def __init__(self, image_name, psf_name, mask_name=None):
+    def __init__(self, image, psf, mask=None):
         """
         Opens the original .fits images specified by imagename and psfname and stores their contents in appropriate
         variables for later use. Also initialises variables to store the sizes of the psf and dirty image as these
@@ -30,25 +30,55 @@ class FitsImage:
         mask_name   (default=None): Name of the input .fits file containing a deconvolution mask.
         """
 
+        if type(image) is str:
+            self.InitFromFits(image, psf, mask=None)
+        elif type(image) is np.ndarray:
+            self.InitFromArray(image, psf, mask=None)
+
+
+    def InitFromArray(self,image, psf, mask=None):
+
+        self.dirty_data = image
+        self.psf_data = psf
+        self.mask = None
+        if mask is not None:
+            self.mask = mask
+            
+            self.mask = self.mask.reshape(self.mask.shape[-2], self.mask.shape[-1])
+            self.mask = self.mask/np.max(self.mask)
+            self.mask = fftconvolve(self.mask,np.ones([5,5]),mode="same")
+            self.mask = self.mask/np.max(self.mask)
+
+        self.dirty_data_shape = self.dirty_data.shape
+        self.psf_data_shape = self.psf_data.shape
+
+        self.complete = False
+        self.model = np.zeros_like(self.dirty_data)
+        self.residual = np.copy(self.dirty_data)
+        self.restored = np.zeros_like(self.dirty_data)
+        
+
+    def InitFromFits(self,image_name, psf_name, mask_name=None):
         self.image_name = image_name
         self.psf_name = psf_name
-
+        
         self.img_hdu_list = pyfits.open("{}".format(self.image_name))
         self.psf_hdu_list = pyfits.open("{}".format(self.psf_name))
-
+        
         self.img_hdr = self.img_hdu_list[0].header
         self.psf_hdr = self.psf_hdu_list[0].header
-
+        
         img_slice = self.handle_input(self.img_hdr)
         psf_slice = self.handle_input(self.psf_hdr)
-
+        
         self.dirty_data = (self.img_hdu_list[0].data[img_slice]).astype(np.float32)
         self.psf_data = (self.psf_hdu_list[0].data[psf_slice]).astype(np.float32)
-
+        
         self.mask_name = mask_name
-
+        
         if self.mask_name is not None:
-            self.mask = pyfits.open("{}".format(mask_name))[0].data
+            self.mask = pyfits.open("{}".format(self.mask_name))[0].data
+            
             self.mask = self.mask.reshape(self.mask.shape[-2], self.mask.shape[-1])
             self.mask = self.mask/np.max(self.mask)
             self.mask = fftconvolve(self.mask,np.ones([5,5]),mode="same")
@@ -295,7 +325,7 @@ class FitsImage:
 
                     thresholds = tools.estimate_threshold(dirty_decomposition, edge_excl, int_excl)
 
-                    if self.mask_name is not None:
+                    if self.mask is not None:
                         dirty_decomposition = iuwt.iuwt_decomposition(dirty_subregion*self.mask[subregion_slice], scale_count, 0,
                             decom_mode, core_count)
 
@@ -701,7 +731,7 @@ def main():
         if (args.residualname is None)|(args.restoredname is None)|(args.modelname is None):
             raise ValueError("If outputname is unspecified, residualname, restoredname and modelname must be present.")
 
-    data = FitsImage(args.dirty, args.psf, args.mask)
+    data = Image(args.dirty, args.psf, args.mask)
 
     logger = data.make_logger(args.loglevel)
     logger.info("Parameters:\n" + str(args)[10:-1])
