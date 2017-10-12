@@ -612,12 +612,8 @@ class DataImage(object):
             self.restored = np.fft.fftshift(np.fft.irfft2(np.fft.rfft2(self.model)*np.fft.rfft2(clean_beam)))
         self.restored += self.residual
         self.restored = self.restored.astype(np.float32)
-        try:
-            self.img_hdr.set('BMAJ',beam_params[0])
-            self.img_hdr.set('BMIN',beam_params[1])
-            self.img_hdr.set('BPA',beam_params[2])
-        except Exception as e:
-            logger.error("Exception in writing beam parameters {}".format(e))
+
+        return beam_params
 
     def handle_input(self, input_hdr):
         """
@@ -647,7 +643,7 @@ class DataImage(object):
         """
         data = data.reshape(1, 1, data.shape[0], data.shape[0])
         new_file = pyfits.PrimaryHDU(data,self.img_hdu_list[0].header)
-        new_file.writeto("{}".format(name), clobber=True)
+        new_file.writeto("{}".format(name), overwrite=True)
 
     def make_logger(self, level="INFO"):
         """
@@ -726,6 +722,15 @@ class FitsImage(DataImage):
 
         self.img_hdu_list.close()
         self.psf_hdu_list.close()
+
+    def restore(self):
+        beam_params = super(FitsImage, self).restore()
+        try:
+            self.img_hdr.set('BMAJ',beam_params[0])
+            self.img_hdr.set('BMIN',beam_params[1])
+            self.img_hdr.set('BPA',beam_params[2])
+        except Exception as e:
+            logger.error("Exception in writing beam parameters {}".format(e))
 
 def main():
     
