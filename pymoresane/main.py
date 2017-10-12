@@ -613,9 +613,9 @@ class DataImage(object):
         self.restored += self.residual
         self.restored = self.restored.astype(np.float32)
         try:
-            self.img_hdu_list[0].header.update('BMAJ',beam_params[0])
-            self.img_hdu_list[0].header.update('BMIN',beam_params[1])
-            self.img_hdu_list[0].header.update('BPA',beam_params[2])
+            self.img_hdr.set('BMAJ',beam_params[0])
+            self.img_hdr.set('BMIN',beam_params[1])
+            self.img_hdr.set('BPA',beam_params[2])
         except Exception as e:
             logger.error("Exception in writing beam parameters {}".format(e))
 
