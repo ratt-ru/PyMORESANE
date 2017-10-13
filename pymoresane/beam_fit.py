@@ -3,14 +3,14 @@ from scipy import ndimage
 from scipy.optimize import curve_fit
 
 
-def beam_fit(psf, psf_header):
+def beam_fit(psf, cdelt1, cdelt2):
     """
     The following contructs a restoring beam from the psf. This is accoplished by fitting an elliptical Gaussian to the
     central lobe of the PSF.
 
     INPUTS:
     psf         (no default):   Array containing the psf for the image in question.
-    psf_header  (no default):   Header of the psf.
+    cdelt1, cdelt2  (no default):   Header of the psf.
     """
 
     if psf.shape>512:
@@ -60,8 +60,8 @@ def beam_fit(psf, psf_header):
 
     clean_beam = clean_beam/np.max(clean_beam)
 
-    bmaj = 2*np.sqrt(2*np.log(2))*max(opt[1],opt[2])*psf_header['CDELT1']
-    bmin = 2*np.sqrt(2*np.log(2))*min(opt[1],opt[2])*psf_header['CDELT2']
+    bmaj = 2*np.sqrt(2*np.log(2))*max(opt[1],opt[2])*cdelt1
+    bmin = 2*np.sqrt(2*np.log(2))*min(opt[1],opt[2])*cdelt2
     bpa = np.degrees(opt[3])%360 - 90
 
     beam_params = [abs(bmaj), abs(bmin), bpa]

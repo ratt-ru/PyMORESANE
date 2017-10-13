@@ -10,6 +10,6 @@ setup(name='pymoresane',
       author_email='jonosken@gmail.com',
       url='https://github.com/ratt-ru/PyMORESANE',
       packages=['pymoresane'],
-      requires=['numpy', 'scipy', 'pyfits', 'pycuda'],
+      requires=['numpy', 'scipy', 'astropy', 'pycuda'],
       scripts=['pymoresane/bin/runsane'],
       )
