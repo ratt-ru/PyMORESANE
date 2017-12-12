@@ -9,7 +9,7 @@ try:
     import pycuda.autoinit
     import pycuda.gpuarray as gpuarray
     from pycuda.compiler import SourceModule
-except ImportError:
+except:
     traceback.print_exc()
     print "Pycuda unavailable - GPU mode will fail."
 
